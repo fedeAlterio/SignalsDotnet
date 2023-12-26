@@ -70,7 +70,7 @@ public class City
 
 public record PersonCoordinates(Person Person, Room Room, House House, City City);
 ```
-
+Every signal implements the IObservable interface, so we cann apply all ReactiveX operators we want to them.
 ## `Singal<T>`
 ```c#
     public Signal<Person> Person { get; } = new();
