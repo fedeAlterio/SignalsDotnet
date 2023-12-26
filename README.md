@@ -22,6 +22,18 @@ It is really easy to get started. What you need to do is to replace all binded V
      public ICommand LoginCommand { get; }
      public void Login() { /* Login */ }
  }
+
+public static class DelegateCommandExtensions
+{
+    // This is specific for Prims, but the same approach can be used in other MVVM Frameworks
+    public static T RaiseCanExecuteChangedAutomatically<T>(this T @this) where T : DelegateCommand
+    {
+        var signal = Signal.Computed(@this.CanExecute, config => config with { SubscribeWeakly = false });
+        signal.Subscribe(_ => @this.RaiseCanExecuteChanged());
+        _ = signal.Value;
+        return @this;
+    }
+}
 ```
 
 ## Example 2
