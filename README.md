@@ -56,7 +56,7 @@ public class YoungestPersonViewModel
         });
     }
 
-    public IReadOnlySignal<PersonCoordinates?> YoungestPerson { get; set; }
+    public IReadOnlySignal<PersonCoordinates?> YoungestPerson { get; }
     public CollectionSignal<ObservableCollection<City>> Cities { get; } = new();
 }
 
