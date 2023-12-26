@@ -1,5 +1,5 @@
 # Angular Signals for .Net
-This library is a porting of the Angular Signals in the .Net World, adapted to the .Net MVVM UI Frameworks based on ReactiveX.
+This library is a porting of the Angular Signals in the .Net World, adapted to the .Net MVVM UI Frameworks and based on ReactiveX.
 If you need an introduction to what a signal is, try to see: https://angular.io/guide/signals.
 
 # Get Started
