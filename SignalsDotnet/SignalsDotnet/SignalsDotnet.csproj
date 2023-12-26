@@ -6,7 +6,8 @@
     <Nullable>enable</Nullable>
     <Description>Porting of Angular signals to dotnet</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageProjectUrl>https://github.com/fedeAlterio/SignalsDotnet</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/fedeAlterio/SignalsDotnet</RepositoryUrl>
+    <Version>1.0.1</Version>
   </PropertyGroup>
 
   <ItemGroup>
