@@ -1,5 +1,7 @@
+# Nuget https://www.nuget.org/packages/SignalsDotnet
+
 # Angular Signals for .Net
-This library is a porting of the Angular Signals in the .Net World, adapted to the .Net MVVM UI Frameworks based on ReactiveX.
+This library is a porting of the Angular Signals in the .Net World, adapted to the .Net MVVM UI Frameworks and based on ReactiveX.
 If you need an introduction to what a signal is, try to see: https://angular.io/guide/signals.
 
 # Get Started
@@ -22,6 +24,18 @@ It is really easy to get started. What you need to do is to replace all binded V
      public ICommand LoginCommand { get; }
      public void Login() { /* Login */ }
  }
+
+public static class DelegateCommandExtensions
+{
+    // This is specific for Prism, but the same approach can be used in other MVVM Frameworks
+    public static T RaiseCanExecuteChangedAutomatically<T>(this T @this) where T : DelegateCommand
+    {
+        var signal = Signal.Computed(@this.CanExecute, config => config with { SubscribeWeakly = false });
+        signal.Subscribe(_ => @this.RaiseCanExecuteChanged());
+        _ = signal.Value;
+        return @this;
+    }
+}
 ```
 
 ## Example 2
@@ -44,7 +58,7 @@ public class YoungestPersonViewModel
         });
     }
 
-    public IReadOnlySignal<PersonCoordinates?> YoungestPerson { get; set; }
+    public IReadOnlySignal<PersonCoordinates?> YoungestPerson { get; }
     public CollectionSignal<ObservableCollection<City>> Cities { get; } = new();
 }
 
@@ -70,7 +84,7 @@ public class City
 
 public record PersonCoordinates(Person Person, Room Room, House House, City City);
 ```
-
+Every signal implements the IObservable interface, so we can apply against them all ReactiveX operators we want.
 ## `Singal<T>`
 ```c#
     public Signal<Person> Person { get; } = new();
@@ -84,7 +98,7 @@ It is possible to specify a custom `EqualityComparer` that will be used to check
 
 ## `CollectionSingal<TObservableCollection>`
 
-A `Singal<TObservableCollection>` is a wrapper around an `ObservableCollection` (or in general something that implements the `INotifyCollectionChanged` interface). It listens to both changes of its Value Property, and modifications of the `ObservableCollection` it is wrapping
+A `CollectionSingal<TObservableCollection>` is a wrapper around an `ObservableCollection` (or in general something that implements the `INotifyCollectionChanged` interface). It listens to both changes of its Value Property, and modifications of the `ObservableCollection` it is wrapping
 
 
 It is possible to specify a custom `EqualityComparer` that will be used to check if raise the `PropertyChanged` event. It is also possible to force it to raise the event everytime someone sets the property
