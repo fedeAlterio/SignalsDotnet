@@ -30,27 +30,15 @@ public partial class Signal
         return Computed(func, static () => Optional<T>.Empty, configuration);
     }
 
-    internal static IObservable<T> ComputedObservable<T>(Func<T> func, IScheduler? scheduler = null)
-    {
-        return ComputedObservable(func, static () => Optional<T>.Empty, scheduler);
-    }
-
-    internal static IObservable<T> ComputedObservable<T>(Func<T> func, Func<T> fallbackValue, IScheduler? scheduler = null)
-    {
-        if (func is null)
-            throw new ArgumentNullException(nameof(func));
-
-        return ComputedObservable(func, () => new(fallbackValue()), scheduler);
-    }
 
     internal static IReadOnlySignal<T> Computed<T>(Func<T> func, Func<Optional<T>> fallbackValue, ReadonlySignalConfigurationDelegate<T?>? configuration)
     {
-        var valueObservable = ComputedObservable(func, fallbackValue, ImmediateScheduler.Instance);
+        var valueObservable = ComputedObservable(func, fallbackValue, null);
 
         return new FromObservableSignal<T>(valueObservable, configuration)!;
     }
 
-    internal static IObservable<T> ComputedObservable<T>(Func<T> func, Func<Optional<T>> fallbackValue, IScheduler? scheduler = null)
+    internal static IObservable<T> ComputedObservable<T>(Func<T> func, Func<Optional<T>> fallbackValue, Func<Unit, IObservable<Unit>>? scheduler = null)
     {
         return Observable.Create<T>(observer =>
         {
@@ -72,7 +60,9 @@ public partial class Signal
     }
 
 
-    static ComputationResult<T> ComputeResult<T>(Func<T> resultFunc, Func<Optional<T>> fallbackValue, IScheduler? scheduler)
+    static ComputationResult<T> ComputeResult<T>(Func<T> resultFunc, 
+                                                 Func<Optional<T>> fallbackValue, 
+                                                 Func<Unit, IObservable<Unit>>? scheduler)
     {
         var referenceEquality = ReferenceEqualityComparer.Instance;
         HashSet<IReadOnlySignal> propertiesRequested = new(referenceEquality);
@@ -96,7 +86,7 @@ public partial class Signal
 
         if (scheduler is not null)
         {
-            observable = observable.Select(x => Observable.Return(x, scheduler))
+            observable = observable.Select(scheduler)
                                    .Switch();
         }
 
