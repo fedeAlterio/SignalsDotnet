@@ -30,18 +30,18 @@ public static class ComputedSignalFactoryEx
                                                          Func<CancellationToken, ValueTask<T>> func,
                                                          T startValue,
                                                          Func<T> fallbackValue,
-                                                         ConcurrentRecomputeStrategy concurrentRecomputeStrategy = default,
+                                                         ConcurrentChangeStrategy concurrentChangeStrategy = default,
                                                          ReadonlySignalConfigurationDelegate<T>? configuration = null)
     {
-        return @this.AsyncComputed(func, startValue, () => new Optional<T>(fallbackValue()), concurrentRecomputeStrategy, configuration);
+        return @this.AsyncComputed(func, startValue, () => new Optional<T>(fallbackValue()), concurrentChangeStrategy, configuration);
     }
 
     public static IReadOnlySignal<T> AsyncComputed<T>(this IComputedSignalFactory @this,
                                                          Func<CancellationToken, ValueTask<T>> func,
                                                          T startValue,
-                                                         ConcurrentRecomputeStrategy concurrentRecomputeStrategy = default,
+                                                         ConcurrentChangeStrategy concurrentChangeStrategy = default,
                                                          ReadonlySignalConfigurationDelegate<T>? configuration = null)
     {
-        return @this.AsyncComputed(func, startValue, static () => default, concurrentRecomputeStrategy, configuration);
+        return @this.AsyncComputed(func, startValue, static () => default, concurrentChangeStrategy, configuration);
     }
 }

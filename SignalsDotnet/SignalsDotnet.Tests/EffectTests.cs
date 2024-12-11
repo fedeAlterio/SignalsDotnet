@@ -154,26 +154,25 @@ public class EffectTests
         scheduler.ExecuteAllPendingActions();
         sum.Should().Be(2);
     }
+}
 
-
-    class TestScheduler : IScheduler
+public class TestScheduler : IScheduler
+{
+    Action? _actions;
+    public void ExecuteAllPendingActions()
     {
-        Action? _actions;
-        public void ExecuteAllPendingActions()
-        {
-            var actions = _actions;
-            _actions = null;
-            actions?.Invoke();
-        }
-
-        public IDisposable Schedule<TState>(TState state, Func<IScheduler, TState, IDisposable> action)
-        {
-            _actions += () => action(this, state);
-            return Disposable.Empty;
-        }
-
-        public IDisposable Schedule<TState>(TState state, TimeSpan dueTime, Func<IScheduler, TState, IDisposable> action) => Schedule(state, action);
-        public IDisposable Schedule<TState>(TState state, DateTimeOffset dueTime, Func<IScheduler, TState, IDisposable> action) => Schedule(state, action);
-        public DateTimeOffset Now => DateTimeOffset.UnixEpoch;
+        var actions = _actions;
+        _actions = null;
+        actions?.Invoke();
     }
+
+    public IDisposable Schedule<TState>(TState state, Func<IScheduler, TState, IDisposable> action)
+    {
+        _actions += () => action(this, state);
+        return Disposable.Empty;
+    }
+
+    public IDisposable Schedule<TState>(TState state, TimeSpan dueTime, Func<IScheduler, TState, IDisposable> action) => Schedule(state,       action);
+    public IDisposable Schedule<TState>(TState state, DateTimeOffset dueTime, Func<IScheduler, TState, IDisposable> action) => Schedule(state, action);
+    public DateTimeOffset Now => DateTimeOffset.UnixEpoch;
 }

@@ -1,7 +1,7 @@
 ﻿using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
 using FluentAssertions;
-using SignalsDotnet.Internals.Helpers;
+using SignalsDotnet.Helpers;
 using SignalsDotnet.Tests.Helpers;
 
 namespace SignalsDotnet.Tests;
@@ -93,7 +93,7 @@ public class AsyncComputedSignalTests
             computeToken = token;
             await Task.Delay(1, token);
             return sum;
-        }, 0, ConcurrentRecomputeStrategy.CancelCurrent);
+        }, 0, ConcurrentChangeStrategy.CancelCurrent);
 
         _ = computed.Value;
         await TestHelpers.WaitUntil(() => computeToken.IsCancellationRequested);
@@ -147,12 +147,11 @@ public class AsyncComputedSignalTests
     {
         await this.SwitchToMainThread();
         var cancellationRequested = new Signal<bool>();
-        var cancellationSignal = CancellationSignal.Create(cancellationRequested);
 
         var waitForCancellationSignal = new Signal<bool>(false);
-        var cancellationToken = new Signal<CancellationToken?>(null);
+        var cancellationToken = new Signal<CancellationToken?>();
         var computedSignal = ComputedSignalFactory.Default
-                                                  .CancelEverythingWhen(cancellationSignal)
+                                                  .DisconnectEverythingWhen(cancellationRequested)
                                                   .AsyncComputed(async token =>
                                                   {
                                                       await waitForCancellationSignal.FirstAsync(x => x);

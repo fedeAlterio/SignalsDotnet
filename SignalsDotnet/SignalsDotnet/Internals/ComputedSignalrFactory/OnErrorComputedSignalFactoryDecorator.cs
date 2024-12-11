@@ -39,12 +39,12 @@ internal class OnErrorComputedSignalFactoryDecorator : IComputedSignalFactory
         }, fallbackValue);
     }
 
-    public IReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func, T startValue, Func<Optional<T>> fallbackValue, ConcurrentRecomputeStrategy concurrentRecomputeStrategy = default, ReadonlySignalConfigurationDelegate<T>? configuration = null)
+    public IReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func, T startValue, Func<Optional<T>> fallbackValue, ConcurrentChangeStrategy concurrentChangeStrategy = default, ReadonlySignalConfigurationDelegate<T>? configuration = null)
     {
-        return AsyncComputedObservable(func, startValue, fallbackValue, concurrentRecomputeStrategy).ToSignal(configuration!)!;
+        return AsyncComputedObservable(func, startValue, fallbackValue, concurrentChangeStrategy).ToSignal(configuration!)!;
     }
 
-    public IObservable<T> AsyncComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func, T startValue, Func<Optional<T>> fallbackValue, ConcurrentRecomputeStrategy concurrentRecomputeStrategy = default)
+    public IObservable<T> AsyncComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func, T startValue, Func<Optional<T>> fallbackValue, ConcurrentChangeStrategy concurrentChangeStrategy = default)
     {
         return _parent.AsyncComputedObservable(async token =>
         {
@@ -57,7 +57,7 @@ internal class OnErrorComputedSignalFactoryDecorator : IComputedSignalFactory
                 NotifyException(e);
                 throw;
             }
-        }, startValue, fallbackValue, concurrentRecomputeStrategy);
+        }, startValue, fallbackValue, concurrentChangeStrategy);
     }
 
     public Effect Effect(Action onChange, IScheduler? scheduler = null)
@@ -76,7 +76,7 @@ internal class OnErrorComputedSignalFactoryDecorator : IComputedSignalFactory
         }, scheduler);
     }
 
-    public Effect AsyncEffect(Func<CancellationToken, ValueTask> onChange, ConcurrentRecomputeStrategy concurrentRecomputeStrategy = default, IScheduler? scheduler = null)
+    public Effect AsyncEffect(Func<CancellationToken, ValueTask> onChange, ConcurrentChangeStrategy concurrentChangeStrategy = default, IScheduler? scheduler = null)
     {
         return _parent.AsyncEffect(async token =>
         {
@@ -89,7 +89,7 @@ internal class OnErrorComputedSignalFactoryDecorator : IComputedSignalFactory
                 NotifyException(e);
                 throw;
             }
-        }, concurrentRecomputeStrategy);
+        }, concurrentChangeStrategy);
     }
 
     void NotifyException(Exception e)

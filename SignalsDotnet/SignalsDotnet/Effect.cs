@@ -23,14 +23,14 @@ public class Effect : IDisposable
                               .Subscribe();
     }
 
-    public Effect(Func<CancellationToken, ValueTask> onChange, ConcurrentRecomputeStrategy concurrentRecomputeStrategy = default,  IScheduler? scheduler = null)
+    public Effect(Func<CancellationToken, ValueTask> onChange, ConcurrentChangeStrategy concurrentChangeStrategy = default,  IScheduler? scheduler = null)
     {
         var computationDelayer = ComputationDelayer(scheduler ?? DefaultScheduler);
         _subscription = Signal.ComputedObservable(async token =>
                               {
                                   await onChange(token);
                                   return Unit.Default;
-                              }, static () => Optional<Unit>.Empty, computationDelayer, concurrentRecomputeStrategy)
+                              }, static () => Optional<Unit>.Empty, computationDelayer, concurrentChangeStrategy)
                               .Subscribe();
     }
 
@@ -73,7 +73,7 @@ public class Effect : IDisposable
         }
     }
 
-    public static async ValueTask AtomicOperation(Func<ValueTask> action)
+    public static async ValueTask AtomicOperationAsync(Func<ValueTask> action)
     {
         lock (_atomicOperationsLocker)
         {

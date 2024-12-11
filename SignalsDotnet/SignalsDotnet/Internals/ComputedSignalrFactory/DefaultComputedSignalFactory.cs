@@ -14,10 +14,10 @@ internal class DefaultComputedSignalFactory : IComputedSignalFactory
     public IReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
                                                T startValue,
                                                Func<Optional<T>> fallbackValue,
-                                               ConcurrentRecomputeStrategy concurrentRecomputeStrategy = default,
+                                               ConcurrentChangeStrategy concurrentChangeStrategy = default,
                                                ReadonlySignalConfigurationDelegate<T>? configuration = null)
     {
-        return Signal.AsyncComputed(func, startValue, fallbackValue, concurrentRecomputeStrategy, configuration);
+        return Signal.AsyncComputed(func, startValue, fallbackValue, concurrentChangeStrategy, configuration);
     }
 
 
@@ -26,9 +26,9 @@ internal class DefaultComputedSignalFactory : IComputedSignalFactory
         return Signal.ComputedObservable(func, fallbackValue);
     }
 
-    public IObservable<T> AsyncComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func, T startValue, Func<Optional<T>> fallbackValue, ConcurrentRecomputeStrategy concurrentRecomputeStrategy = default)
+    public IObservable<T> AsyncComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func, T startValue, Func<Optional<T>> fallbackValue, ConcurrentChangeStrategy concurrentChangeStrategy = default)
     {
-        return Signal.AsyncComputedObservable(func, startValue, fallbackValue, concurrentRecomputeStrategy);
+        return Signal.AsyncComputedObservable(func, startValue, fallbackValue, concurrentChangeStrategy);
     }
 
 
@@ -37,9 +37,9 @@ internal class DefaultComputedSignalFactory : IComputedSignalFactory
         return new Effect(onChange, scheduler);
     }
 
-    public Effect AsyncEffect(Func<CancellationToken, ValueTask> onChange, ConcurrentRecomputeStrategy concurrentRecomputeStrategy, IScheduler? scheduler)
+    public Effect AsyncEffect(Func<CancellationToken, ValueTask> onChange, ConcurrentChangeStrategy concurrentChangeStrategy, IScheduler? scheduler)
     {
-        return new Effect(onChange, concurrentRecomputeStrategy, scheduler);
+        return new Effect(onChange, concurrentChangeStrategy, scheduler);
     }
 
 

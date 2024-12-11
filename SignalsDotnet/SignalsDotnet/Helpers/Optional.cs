@@ -8,7 +8,6 @@ public readonly struct Optional<T>
     public Optional() => (_value, HasValue) = (default, false);
     public Optional(T value) => (_value, HasValue) = (value, true);
     public static Optional<T> Empty => new();
-
     public bool HasValue { get; }
     public T? Value => HasValue ? _value : throw new InvalidOperationException("Impossible retrieve a value for an empty optional");
 }

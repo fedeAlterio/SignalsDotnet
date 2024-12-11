@@ -1,6 +1,6 @@
 ﻿namespace SignalsDotnet;
 
-public enum ConcurrentRecomputeStrategy
+public enum ConcurrentChangeStrategy
 {
     ScheduleNext,
     CancelCurrent

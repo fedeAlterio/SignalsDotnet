@@ -12,13 +12,14 @@ public interface IComputedSignalFactory
     IReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
                                         T startValue,
                                         Func<Optional<T>> fallbackValue,
-                                        ConcurrentRecomputeStrategy concurrentRecomputeStrategy = default,
+                                        ConcurrentChangeStrategy concurrentChangeStrategy = default,
                                         ReadonlySignalConfigurationDelegate<T>? configuration = null);
+
     IObservable<T> AsyncComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func,
                                               T startValue,
                                               Func<Optional<T>> fallbackValue,
-                                              ConcurrentRecomputeStrategy concurrentRecomputeStrategy = default);
+                                              ConcurrentChangeStrategy concurrentChangeStrategy = default);
 
     Effect Effect(Action onChange, IScheduler? scheduler = null);
-    Effect AsyncEffect(Func<CancellationToken, ValueTask> onChange, ConcurrentRecomputeStrategy concurrentRecomputeStrategy = default, IScheduler? scheduler = null);
+    Effect AsyncEffect(Func<CancellationToken, ValueTask> onChange, ConcurrentChangeStrategy concurrentChangeStrategy = default, IScheduler? scheduler = null);
 }

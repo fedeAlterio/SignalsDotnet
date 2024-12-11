@@ -24,9 +24,9 @@ internal class CancelComputedSignalFactoryDecorator : IComputedSignalFactory
     public IReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
                                                T startValue,
                                                Func<Optional<T>> fallbackValue,
-                                               ConcurrentRecomputeStrategy concurrentRecomputeStrategy = default, ReadonlySignalConfigurationDelegate<T>? configuration = null)
+                                               ConcurrentChangeStrategy concurrentChangeStrategy = default, ReadonlySignalConfigurationDelegate<T>? configuration = null)
     {
-        return AsyncComputedObservable(func, startValue, fallbackValue, concurrentRecomputeStrategy).ToSignal(configuration!)!;
+        return AsyncComputedObservable(func, startValue, fallbackValue, concurrentChangeStrategy).ToSignal(configuration!)!;
     }
 
     public IObservable<T> ComputedObservable<T>(Func<T> func, Func<Optional<T>> fallbackValue)
@@ -44,7 +44,7 @@ internal class CancelComputedSignalFactoryDecorator : IComputedSignalFactory
                       .Select(x => x.Value!);
     }
 
-    public IObservable<T> AsyncComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func, T startValue, Func<Optional<T>> fallbackValue, ConcurrentRecomputeStrategy concurrentRecomputeStrategy = default)
+    public IObservable<T> AsyncComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func, T startValue, Func<Optional<T>> fallbackValue, ConcurrentChangeStrategy concurrentChangeStrategy = default)
     {
         return _parent.AsyncComputedObservable(async token =>
                       {
@@ -56,7 +56,7 @@ internal class CancelComputedSignalFactoryDecorator : IComputedSignalFactory
                           using var cts = CancellationTokenSource.CreateLinkedTokenSource(token, _cancellationSignal.UntrackedValue);
                           var result = await func(cts.Token);
                           return new Optional<T>(result);
-                      }, new Optional<T>(startValue), () => new Optional<Optional<T>>(fallbackValue()), concurrentRecomputeStrategy)
+                      }, new Optional<T>(startValue), () => new Optional<Optional<T>>(fallbackValue()), concurrentChangeStrategy)
                       .Where(static x => x.HasValue)
                       .Select(static x => x.Value)!;
     }
@@ -74,7 +74,7 @@ internal class CancelComputedSignalFactoryDecorator : IComputedSignalFactory
         }, scheduler);
     }
 
-    public Effect AsyncEffect(Func<CancellationToken, ValueTask> onChange, ConcurrentRecomputeStrategy concurrentRecomputeStrategy, IScheduler? scheduler)
+    public Effect AsyncEffect(Func<CancellationToken, ValueTask> onChange, ConcurrentChangeStrategy concurrentChangeStrategy, IScheduler? scheduler)
     {
         return new Effect(async token =>
         {
@@ -85,6 +85,6 @@ internal class CancelComputedSignalFactoryDecorator : IComputedSignalFactory
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(_cancellationSignal.UntrackedValue, token);
             await onChange(cts.Token);
-        }, concurrentRecomputeStrategy, scheduler);
+        }, concurrentChangeStrategy, scheduler);
     }
 }

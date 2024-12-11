@@ -18,6 +18,4 @@ public static class ObservableEx
                              .Publish()
                              .RefCount();
     }
-
-
 }
