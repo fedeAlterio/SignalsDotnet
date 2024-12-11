@@ -8,11 +8,11 @@ namespace SignalsDotnet;
 public class Signal<T> : Signal, IReadOnlySignal<T?>, IEquatable<Signal<T>>
 {
     readonly SignalConfiguration<T> _configuration;
-    public Signal(SignalConfigurationDelegate<T>? configurator = null) : this(default, configurator)
+    public Signal(SignalConfigurationDelegate<T?>? configurator = null) : this(default!, configurator!) 
     {
     }
 
-    public Signal(T? startValue, SignalConfigurationDelegate<T>? configurator = null)
+    public Signal(T startValue, SignalConfigurationDelegate<T>? configurator = null)
     {
         var configuration = SignalConfiguration<T>.Default;
         if (configurator != null)
@@ -20,17 +20,16 @@ public class Signal<T> : Signal, IReadOnlySignal<T?>, IEquatable<Signal<T>>
 
         _configuration = configuration;
         _value = startValue;
-
     }
 
 
-    T? _value;
-    public T? Value
+    T _value;
+    public T Value
     {
         get => GetValue(this, in _value);
         set => SetValue(ref _value, value, _configuration.Comparer, _configuration.RaiseOnlyWhenChanged);
     }
-    public T? UntrackedValue => _value;
+    public T UntrackedValue => _value;
     object? IReadOnlySignal.UntrackedValue => UntrackedValue;
 
     public IDisposable Subscribe(IObserver<T?> observer) => this.OnPropertyChanged(nameof(Value), () => Value)

@@ -1,6 +1,6 @@
 ﻿using System.Reflection;
 
-namespace SignalsDotnet;
+namespace SignalsDotnet.Internals.Helpers;
 
 static class WeakObservable
 {

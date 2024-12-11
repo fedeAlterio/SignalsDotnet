@@ -1,8 +1,8 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 
-namespace SignalsDotnet.Internals.Helpers;
+namespace SignalsDotnet.Helpers;
 
-readonly struct Optional<T>
+public readonly struct Optional<T>
 {
     readonly T? _value;
     public Optional() => (_value, HasValue) = (default, false);

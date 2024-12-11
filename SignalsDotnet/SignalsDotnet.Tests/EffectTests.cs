@@ -3,10 +3,11 @@ using System.Reactive.Disposables;
 using FluentAssertions;
 
 namespace SignalsDotnet.Tests;
+
 public class EffectTests
 {
     [Fact]
-    void ShouldRunWhenAnySignalChanges()
+    public void ShouldRunWhenAnySignalChanges()
     {
         var number1 = new Signal<int>();
         var number2 = new Signal<int>();
@@ -31,7 +32,7 @@ public class EffectTests
     }
 
     [Fact]
-    void ShouldRunOnSpecifiedScheduler()
+    public void ShouldRunOnSpecifiedScheduler()
     {
         var scheduler = new TestScheduler();
         var number1 = new Signal<int>();
@@ -58,7 +59,7 @@ public class EffectTests
     }
 
     [Fact]
-    void EffectShouldNotRunMultipleTimesInASingleSchedule()
+    public void EffectShouldNotRunMultipleTimesInASingleSchedule()
     {
         var scheduler = new TestScheduler();
         var number1 = new Signal<int>();
@@ -91,13 +92,13 @@ public class EffectTests
     }
 
     [Fact]
-    void EffectsShouldRunAtTheEndOfAtomicOperations()
+    public void EffectsShouldRunAtTheEndOfAtomicOperations()
     {
         var number1 = new Signal<int>();
         var number2 = new Signal<int>();
 
         int sum = -1;
-        var effect = new Effect(() => sum = number1.Value + number2.Value);
+        _ = new Effect(() => sum = number1.Value + number2.Value);
         sum.Should().Be(0);
 
         Effect.AtomicOperation(() =>
@@ -128,14 +129,14 @@ public class EffectTests
     }
 
     [Fact]
-    void EffectsShouldRunAtTheEndOfAtomicOperationsWithScheduler()
+    public void EffectsShouldRunAtTheEndOfAtomicOperationsWithScheduler()
     {
         var scheduler = new TestScheduler();
         var number1 = new Signal<int>();
         var number2 = new Signal<int>();
 
         int sum = -1;
-        var effect = new Effect(() => sum = number1.Value + number2.Value, scheduler);
+        _ = new Effect(() => sum = number1.Value + number2.Value, scheduler);
         sum.Should().Be(0);
 
         Effect.AtomicOperation(() =>

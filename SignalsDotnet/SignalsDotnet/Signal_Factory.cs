@@ -8,10 +8,10 @@ public partial class Signal
 {
     public static Signal<T> Create<T>(SignalConfigurationDelegate<T>? configurator = null)
     {
-        return new Signal<T>(configurator);
+        return new Signal<T>(configurator!);
     }
 
-    public static Signal<T> Create<T>(T? startValue, SignalConfigurationDelegate<T>? configurator = null)
+    public static Signal<T> Create<T>(T startValue, SignalConfigurationDelegate<T>? configurator = null)
     {
         return new Signal<T>(startValue, configurator);
     }
@@ -22,7 +22,7 @@ public partial class Signal
     }
 
     public static CollectionSignal<TCollection> CreateCollectionSignal<TCollection>(CollectionChangedSignalConfigurationDelegate? collectionChangedConfiguration = null,
-                                                                                    SignalConfigurationDelegate<IReadOnlySignal<TCollection>>? propertyChangedConfiguration = null) where TCollection : class, INotifyCollectionChanged
+                                                                                    SignalConfigurationDelegate<IReadOnlySignal<TCollection>?>? propertyChangedConfiguration = null) where TCollection : class, INotifyCollectionChanged
     {
         return new CollectionSignal<TCollection>(collectionChangedConfiguration, propertyChangedConfiguration);
     }

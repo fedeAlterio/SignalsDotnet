@@ -1,24 +1,36 @@
-﻿using System.Collections.Concurrent;
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Reactive;
+using System.Reactive.Linq;
+using System.Reactive.Subjects;
 using System.Runtime.CompilerServices;
-using SignalsDotnet.Internals.Helpers;
 
 namespace SignalsDotnet;
 
 public abstract partial class Signal
 {
-    static readonly ConcurrentDictionary<Thread, int> _untrackedThreads = new();
-    static readonly ObservablesByKey<Thread, IReadOnlySignal> _propertyRequested = new();
-    public static IObservable<IReadOnlySignal> PropertiesRequested(Thread thread) => _propertyRequested.When(thread);
+    static readonly object _untrackedLocker = new();
+    static readonly AsyncLocal<int> _untrackedCounter = new();
+    static readonly ISubject<IReadOnlySignal> _signalsRequested = Subject.Synchronize(new Subject<IReadOnlySignal>());
+
+    internal static IObservable<IReadOnlySignal> SignalsRequested() => Observable.Defer(() =>
+    {
+        var isCurrentContext = new AsyncLocal<bool>
+        {
+            Value = true
+        };
+
+        return _signalsRequested.Where(_ => isCurrentContext.Value);
+    });
 
     public static T Untracked<T>(Func<T> action)
     {
         if (action is null)
             throw new ArgumentNullException(nameof(action));
 
-        var currentThread = Thread.CurrentThread;
-        var nestingCount = _untrackedThreads.AddOrUpdate(currentThread, static _ => 0, static (_, nestingCount) => nestingCount + 1);
+        lock (_untrackedLocker)
+        {
+            _untrackedCounter.Value++;
+        }
 
         try
         {
@@ -26,13 +38,9 @@ public abstract partial class Signal
         }
         finally
         {
-            if (nestingCount == 0)
+            lock (_untrackedLocker)
             {
-                _untrackedThreads.TryRemove(currentThread, out _);
-            }
-            else
-            {
-                _untrackedThreads[currentThread] = nestingCount - 1;
+                _untrackedCounter.Value--;
             }
         }
     }
@@ -69,9 +77,16 @@ public abstract partial class Signal
 
     protected static T GetValue<T>(IReadOnlySignal property, in T value)
     {
-        var currentThread = Thread.CurrentThread;
-        if (!_untrackedThreads.ContainsKey(currentThread))
-            _propertyRequested.Invoke(currentThread, property);
+        bool shouldNotify;
+        lock (_untrackedLocker)
+        {
+            shouldNotify = _untrackedCounter.Value == 0;
+        }
+
+        if (shouldNotify)
+        {
+            _signalsRequested.OnNext(property);
+        } 
 
         return value;
     }
