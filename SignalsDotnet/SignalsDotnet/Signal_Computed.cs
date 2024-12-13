@@ -1,4 +1,5 @@
 ﻿using System.Reactive;
+using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using SignalsDotnet.Configuration;
@@ -27,9 +28,9 @@ public partial class Signal
     }
 
 
-    public static IReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func, 
+    public static IReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
                                                       T startValue,
-                                                      Func<Optional<T>> fallbackValue, 
+                                                      Func<Optional<T>> fallbackValue,
                                                       ConcurrentChangeStrategy concurrentChangeStrategy = default,
                                                       ReadonlySignalConfigurationDelegate<T>? configuration = null)
     {
@@ -53,7 +54,7 @@ public partial class Signal
         return AsyncComputed(func, startValue, static () => Optional<T>.Empty, concurrentChangeStrategy, configuration);
     }
 
-    
+
 
     public static IObservable<T> ComputedObservable<T>(Func<T> func,
                                                        Func<Optional<T>> fallbackValue)
@@ -99,7 +100,7 @@ public partial class Signal
 
         return Observable.Create<T>(observer =>
         {
-            var isDisposed = Subject.Synchronize(new BehaviorSubject<bool>(false));
+            var isDisposed = new BehaviorSubject<bool>(false);
 
             ObservableEx.FromAsyncUsingAsyncContext(async token => await ComputeResult(func, fallbackValue, scheduler, concurrentChangeStrategy, token))
                         .TakeUntil(isDisposed.Where(x => x))
@@ -107,27 +108,32 @@ public partial class Signal
 
             void OnNewResult(ComputationResult<T> result)
             {
-                var nextResultComputationStarted = false;
+                var valueNotified = false;
+
                 result.ShouldComputeNextResult.SelectMany(_ =>
                       {
-                          nextResultComputationStarted = true;
+                          NotifyValueIfNotAlready();
                           return ObservableEx.FromAsyncUsingAsyncContext(async token => await ComputeResult(func, fallbackValue, scheduler, concurrentChangeStrategy, token));
                       })
                       .Take(1)
                       .TakeUntil(isDisposed.Where(x => x))
                       .Subscribe(OnNewResult);
 
-                if (nextResultComputationStarted)
-                {
-                    return;
-                }
+                NotifyValueIfNotAlready();
 
                 // We notify a new value only if the func() evaluation succeeds.
-                if (result.ResultOptional.TryGetValue(out var propertyValue))
-                    observer.OnNext(propertyValue);
+                void NotifyValueIfNotAlready()
+                {
+                    if (valueNotified)
+                        return;
+
+                    valueNotified = true;
+                    if (result.ResultOptional.TryGetValue(out var propertyValue))
+                        observer.OnNext(propertyValue);
+                }
             }
 
-            return () => isDisposed.OnNext(true);
+            return Disposable.Create(() => isDisposed.OnNext(true));
         });
     }
 
