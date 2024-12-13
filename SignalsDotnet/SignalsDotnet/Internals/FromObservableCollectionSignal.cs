@@ -7,7 +7,7 @@ using SignalsDotnet.Internals.Helpers;
 
 namespace SignalsDotnet.Internals;
 
-class FromObservableCollectionSignal<T> : Signal, IReadOnlySignal<T> where T : INotifyCollectionChanged
+internal class FromObservableCollectionSignal<T> : Signal, IReadOnlySignal<T> where T : INotifyCollectionChanged
 {
     readonly Subject<Unit> _collectionChanged = new();
     

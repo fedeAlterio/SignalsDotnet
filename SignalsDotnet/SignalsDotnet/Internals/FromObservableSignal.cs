@@ -6,7 +6,7 @@ using SignalsDotnet.Internals.Helpers;
 
 namespace SignalsDotnet.Internals;
 
-class FromObservableSignal<T> : Signal, IReadOnlySignal<T?>, IEquatable<FromObservableSignal<T?>>
+internal class FromObservableSignal<T> : Signal, IReadOnlySignal<T?>, IEquatable<FromObservableSignal<T?>>
 {
     readonly ReadonlySignalConfiguration<T?> _configuration;
     readonly Subject<Unit> _someoneAskedValueSubject = new();

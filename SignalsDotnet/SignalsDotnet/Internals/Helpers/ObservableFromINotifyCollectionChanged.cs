@@ -4,7 +4,7 @@ using System.Reactive.Linq;
 
 namespace SignalsDotnet.Internals.Helpers;
 
-static class ObservableFromINotifyCollectionChanged
+internal static class ObservableFromINotifyCollectionChanged
 {
     public static IObservable<EventPattern<NotifyCollectionChangedEventArgs>> OnCollectionChanged(this INotifyCollectionChanged collection)
     {

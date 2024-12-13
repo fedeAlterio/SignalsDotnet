@@ -12,7 +12,7 @@ public readonly struct Optional<T>
     public T? Value => HasValue ? _value : throw new InvalidOperationException("Impossible retrieve a value for an empty optional");
 }
 
-static class OptionalExtensions
+public static class OptionalExtensions
 {
     public static bool TryGetValue<T>(this Optional<T> @this, [NotNullWhen(true)] out T? value)
     {

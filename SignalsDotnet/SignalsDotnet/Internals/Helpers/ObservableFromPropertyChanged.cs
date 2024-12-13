@@ -3,7 +3,7 @@ using System.Reactive.Linq;
 
 namespace SignalsDotnet.Internals.Helpers;
 
-static class ObservableFromPropertyChanged
+internal static class ObservableFromPropertyChanged
 {
     public static IObservable<T> OnPropertyChanged<T>(this INotifyPropertyChanged @this,
                                                       string propertyName,

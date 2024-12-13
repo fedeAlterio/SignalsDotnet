@@ -62,5 +62,4 @@ public class Signal<T> : Signal, IReadOnlySignal<T?>, IEquatable<Signal<T>>
 
     public override int GetHashCode() => _value is null ? 0 : _configuration.Comparer.GetHashCode(_value!);
     public IObservable<Unit> Changed => this.Select(static _ => Unit.Default);
-
 }
