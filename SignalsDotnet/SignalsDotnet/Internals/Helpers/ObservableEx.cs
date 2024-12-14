@@ -4,7 +4,7 @@ using System.Reactive.Linq;
 
 namespace SignalsDotnet.Internals.Helpers;
 
-public static class ObservableEx
+internal static class ObservableEx
 {
     public static IObservable<T> FromAsyncUsingAsyncContext<T>(Func<CancellationToken, Task<T>> asyncAction)
     {

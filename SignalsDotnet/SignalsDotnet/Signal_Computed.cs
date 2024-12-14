@@ -137,7 +137,6 @@ public partial class Signal
         });
     }
 
-
     static async ValueTask<ComputationResult<T>> ComputeResult<T>(Func<CancellationToken, ValueTask<T>> resultFunc, 
                                                                   Func<Optional<T>> fallbackValue, 
                                                                   Func<Unit, IObservable<Unit>>? scheduler, 

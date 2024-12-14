@@ -1,6 +1,7 @@
 ﻿using System.Reactive.Linq;
 
 namespace SignalsDotnet.Helpers;
+
 public static class ObservableEx
 {
     public static IObservable<T> DisconnectWhen<T>(this IObservable<T> @this, IObservable<bool> isDisconnected)
