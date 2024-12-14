@@ -16,8 +16,8 @@ jobs:
       with:
         dotnet-version: 6.0.x
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore ./SignalsDotnet
     - name: Build
-      run: dotnet build --no-restore
+      run: dotnet build  ./SignalsDotnet --no-restore
     - name: Test
-      run: dotnet test --no-build --verbosity normal
+      run: dotnet test ./SignalsDotnet\SignalsDotnet.Tests --no-build --verbosity normal
