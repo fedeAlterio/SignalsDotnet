@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel;
 using System.Reactive;
+using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Runtime.CompilerServices;
@@ -8,26 +9,50 @@ namespace SignalsDotnet;
 
 public abstract partial class Signal
 {
-    static readonly object _untrackedLocker = new();
     static readonly AsyncLocal<int> _untrackedCounter = new();
     static readonly ISubject<IReadOnlySignal> _signalsRequested = Subject.Synchronize(new Subject<IReadOnlySignal>());
+    static readonly AsyncLocal<uint> _computedSignalAffinityIndex = new();
+
 
     internal static IObservable<IReadOnlySignal> SignalsRequested() => Observable.Defer(() =>
     {
-        var isCurrentContext = new AsyncLocal<bool>
+        uint startSignalRecursion;
+        lock (_computedSignalAffinityIndex)
         {
-            Value = true
-        };
+            startSignalRecursion = _computedSignalAffinityIndex.Value;
+        }
 
-        return _signalsRequested.Where(_ => isCurrentContext.Value);
+        return _signalsRequested.Where(_ =>
+        {
+            lock (_computedSignalAffinityIndex)
+            {
+                return _computedSignalAffinityIndex.Value == startSignalRecursion;
+            }
+        });
     });
+
+    internal static IDisposable ChangeComputedSignalAffinity()
+    {
+        lock (_computedSignalAffinityIndex)
+        {
+            _computedSignalAffinityIndex.Value++;
+        }
+
+        return Disposable.Create(() =>
+        {
+            lock (_computedSignalAffinityIndex)
+            {
+                _computedSignalAffinityIndex.Value--;
+            }
+        });
+    }
 
     public static T Untracked<T>(Func<T> action)
     {
         if (action is null)
             throw new ArgumentNullException(nameof(action));
 
-        lock (_untrackedLocker)
+        lock (_untrackedCounter)
         {
             _untrackedCounter.Value++;
         }
@@ -38,7 +63,7 @@ public abstract partial class Signal
         }
         finally
         {
-            lock (_untrackedLocker)
+            lock (_untrackedCounter)
             {
                 _untrackedCounter.Value--;
             }
@@ -78,7 +103,7 @@ public abstract partial class Signal
     protected static T GetValue<T>(IReadOnlySignal property, in T value)
     {
         bool shouldNotify;
-        lock (_untrackedLocker)
+        lock (_untrackedCounter)
         {
             shouldNotify = _untrackedCounter.Value == 0;
         }

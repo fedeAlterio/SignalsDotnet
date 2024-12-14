@@ -16,3 +16,8 @@ public interface IReadOnlySignal<out T> : IObservable<T>, IReadOnlySignal
     new T UntrackedValue { get; }
     object? IReadOnlySignal.Value => Value;
 }
+
+public interface IAsyncReadOnlySignal<out T> : IReadOnlySignal<T>
+{
+    IReadOnlySignal<bool> IsComputing { get; }
+}

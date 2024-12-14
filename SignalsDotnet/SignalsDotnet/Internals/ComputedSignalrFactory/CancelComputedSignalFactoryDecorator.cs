@@ -2,6 +2,7 @@
 using System.Reactive.Linq;
 using SignalsDotnet.Configuration;
 using SignalsDotnet.Helpers;
+using SignalsDotnet.Internals.Helpers;
 
 namespace SignalsDotnet.Internals.ComputedSignalrFactory;
 
@@ -21,12 +22,13 @@ internal class CancelComputedSignalFactoryDecorator : IComputedSignalFactory
         return ComputedObservable(func, fallbackValue).ToSignal(configuration!)!;
     }
 
-    public IReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
-                                               T startValue,
-                                               Func<Optional<T>> fallbackValue,
-                                               ConcurrentChangeStrategy concurrentChangeStrategy = default, ReadonlySignalConfigurationDelegate<T>? configuration = null)
+    public IAsyncReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
+                                                    T startValue,
+                                                    Func<Optional<T>> fallbackValue,
+                                                    ConcurrentChangeStrategy concurrentChangeStrategy = default, ReadonlySignalConfigurationDelegate<T>? configuration = null)
     {
-        return AsyncComputedObservable(func, startValue, fallbackValue, concurrentChangeStrategy).ToSignal(configuration!)!;
+        func = func.TraceWhenExecuting(out var isExecuting);
+        return AsyncComputedObservable(func, startValue, fallbackValue, concurrentChangeStrategy).ToAsyncSignal(isExecuting, configuration!)!;
     }
 
     public IObservable<T> ComputedObservable<T>(Func<T> func, Func<Optional<T>> fallbackValue)

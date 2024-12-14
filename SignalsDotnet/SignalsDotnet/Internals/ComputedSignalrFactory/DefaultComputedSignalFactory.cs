@@ -11,7 +11,7 @@ internal class DefaultComputedSignalFactory : IComputedSignalFactory
         return Signal.Computed(func, fallbackValue, configuration);
     }
 
-    public IReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
+    public IAsyncReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
                                                T startValue,
                                                Func<Optional<T>> fallbackValue,
                                                ConcurrentChangeStrategy concurrentChangeStrategy = default,

@@ -1,6 +1,7 @@
 ﻿using System.Reactive.Concurrency;
 using SignalsDotnet.Configuration;
 using SignalsDotnet.Helpers;
+using SignalsDotnet.Internals.Helpers;
 
 namespace SignalsDotnet.Internals.ComputedSignalrFactory;
 
@@ -39,9 +40,10 @@ internal class OnErrorComputedSignalFactoryDecorator : IComputedSignalFactory
         }, fallbackValue);
     }
 
-    public IReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func, T startValue, Func<Optional<T>> fallbackValue, ConcurrentChangeStrategy concurrentChangeStrategy = default, ReadonlySignalConfigurationDelegate<T>? configuration = null)
+    public IAsyncReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func, T startValue, Func<Optional<T>> fallbackValue, ConcurrentChangeStrategy concurrentChangeStrategy = default, ReadonlySignalConfigurationDelegate<T>? configuration = null)
     {
-        return AsyncComputedObservable(func, startValue, fallbackValue, concurrentChangeStrategy).ToSignal(configuration!)!;
+        func = func.TraceWhenExecuting(out var isExecuting);
+        return AsyncComputedObservable(func, startValue, fallbackValue, concurrentChangeStrategy).ToAsyncSignal(isExecuting, configuration!)!;
     }
 
     public IObservable<T> AsyncComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func, T startValue, Func<Optional<T>> fallbackValue, ConcurrentChangeStrategy concurrentChangeStrategy = default)

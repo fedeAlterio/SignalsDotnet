@@ -13,4 +13,30 @@ internal static class GenericHelpers
             return ValueTask.FromResult(func());
         };
     }
+
+    public static Func<CancellationToken, ValueTask<T>> TraceWhenExecuting<T>(this Func<CancellationToken, ValueTask<T>> func, out IReadOnlySignal<bool> isExecuting)
+    {
+        var isExecutingSignal = new Signal<bool>();
+        isExecuting = isExecutingSignal;
+
+        return async token =>
+        {
+            try
+            {
+                using (Signal.ChangeComputedSignalAffinity())
+                {
+                    isExecutingSignal.Value = true;
+                }
+
+                return await func(token);
+            }
+            finally
+            {
+                using (Signal.ChangeComputedSignalAffinity())
+                {
+                    isExecutingSignal.Value = false;
+                }
+            }
+        };
+    }
 }

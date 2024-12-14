@@ -28,28 +28,29 @@ public partial class Signal
     }
 
 
-    public static IReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
+    public static IAsyncReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
                                                       T startValue,
                                                       Func<Optional<T>> fallbackValue,
                                                       ConcurrentChangeStrategy concurrentChangeStrategy = default,
                                                       ReadonlySignalConfigurationDelegate<T>? configuration = null)
     {
-        return Computed(func, new Optional<T>(startValue), fallbackValue, concurrentChangeStrategy, configuration!);
+        func = func.TraceWhenExecuting(out var isExecuting);
+        return AsyncComputed(func, new Optional<T>(startValue), fallbackValue, isExecuting, concurrentChangeStrategy, configuration!);
     }
 
-    public static IReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
-                                                      T startValue,
-                                                      Func<T> fallbackValue,
-                                                      ConcurrentChangeStrategy concurrentChangeStrategy = default,
-                                                      ReadonlySignalConfigurationDelegate<T>? configuration = null)
+    public static IAsyncReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
+                                                           T startValue,
+                                                           Func<T> fallbackValue,
+                                                           ConcurrentChangeStrategy concurrentChangeStrategy = default,
+                                                           ReadonlySignalConfigurationDelegate<T>? configuration = null)
     {
         return AsyncComputed(func, startValue, () => new Optional<T>(fallbackValue()), concurrentChangeStrategy, configuration);
     }
 
-    public static IReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
-                                                      T startValue,
-                                                      ConcurrentChangeStrategy concurrentChangeStrategy = default,
-                                                      ReadonlySignalConfigurationDelegate<T>? configuration = null)
+    public static IAsyncReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
+                                                           T startValue,
+                                                           ConcurrentChangeStrategy concurrentChangeStrategy = default,
+                                                           ReadonlySignalConfigurationDelegate<T>? configuration = null)
     {
         return AsyncComputed(func, startValue, static () => Optional<T>.Empty, concurrentChangeStrategy, configuration);
     }
@@ -85,6 +86,22 @@ public partial class Signal
         }
 
         return new FromObservableSignal<T>(valueObservable, configuration)!;
+    }
+
+    internal static IAsyncReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
+                                                             Optional<T> startValueOptional,
+                                                             Func<Optional<T>> fallbackValue,
+                                                             IReadOnlySignal<bool> isExecuting,
+                                                             ConcurrentChangeStrategy concurrentChangeStrategy,
+                                                             ReadonlySignalConfigurationDelegate<T?>? configuration)
+    {
+        var valueObservable = ComputedObservable(func, fallbackValue, null, concurrentChangeStrategy);
+        if (startValueOptional.TryGetValue(out var startValue))
+        {
+            valueObservable = valueObservable.StartWith(startValue);
+        }
+
+        return new FromObservableAsyncSignal<T>(valueObservable, isExecuting, configuration);
     }
 
     internal static IObservable<T> ComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func,
@@ -137,10 +154,10 @@ public partial class Signal
         });
     }
 
-    static async ValueTask<ComputationResult<T>> ComputeResult<T>(Func<CancellationToken, ValueTask<T>> resultFunc, 
-                                                                  Func<Optional<T>> fallbackValue, 
-                                                                  Func<Unit, IObservable<Unit>>? scheduler, 
-                                                                  ConcurrentChangeStrategy concurrentChangeStrategy, 
+    static async ValueTask<ComputationResult<T>> ComputeResult<T>(Func<CancellationToken, ValueTask<T>> resultFunc,
+                                                                  Func<Optional<T>> fallbackValue,
+                                                                  Func<Unit, IObservable<Unit>>? scheduler,
+                                                                  ConcurrentChangeStrategy concurrentChangeStrategy,
                                                                   CancellationToken cancellationToken)
     {
         var referenceEquality = ReferenceEqualityComparer.Instance;

@@ -96,3 +96,15 @@ internal class FromObservableSignal<T> : Signal, IReadOnlySignal<T?>, IEquatable
     public override int GetHashCode() => _value is null ? 0 : _configuration.Comparer.GetHashCode(_value);
     public IObservable<Unit> Changed => this.Select(static _ => Unit.Default);
 }
+
+internal class FromObservableAsyncSignal<T> : FromObservableSignal<T>, IAsyncReadOnlySignal<T>
+{
+    public FromObservableAsyncSignal(IObservable<T> observable,
+                                     IReadOnlySignal<bool> isExecuting,
+                                     ReadonlySignalConfigurationDelegate<T?>? configuration = null) : base(observable, configuration)
+    {
+        IsComputing = isExecuting;
+    }
+
+    public IReadOnlySignal<bool> IsComputing { get; }
+}
