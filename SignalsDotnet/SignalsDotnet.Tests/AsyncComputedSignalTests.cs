@@ -172,4 +172,29 @@ public class AsyncComputedSignalTests
         await cancellationToken.FirstAsync(x => x is not null);
         cancellationToken.Value!.Value.IsCancellationRequested.Should().BeFalse();
     }
+
+
+    [Fact]
+    public async Task ConcurrentUpdate_ShouldScheduleNext_IfRequested()
+    {
+        await this.SwitchToMainThread();
+
+        var prop1 = new Signal<int>(1);
+        var prop2 = new Signal<int>();
+
+
+        var computed = Signal.AsyncComputed(async token =>
+        {
+            var sum = prop1.Value + prop2.Value;
+            prop1.Value++;
+            await Task.Delay(0, token);
+            await Task.Yield();
+            return sum;
+        }, -1);
+
+        var task = computed.FirstAsync(x => x == 20)
+                           .ToTask();
+
+        await task;
+    }
 }
