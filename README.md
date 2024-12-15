@@ -40,6 +40,88 @@ public static class DelegateCommandExtensions
 
 ## Example 2
 ```c#
+public class LoginViewModel : IActivatableViewModel
+{
+    public LoginViewModel()
+    {
+        // Here i am using ReactiveUI to check when the viewmodel is activated, but in general any IObservable<bool> works just fine
+        // We can also use a Signal<bool> and set the Value manually
+        IObservable<bool> isDeactivated = this.IsDeactivated();
+
+        var computedFactory = ComputedSignalFactory.Default
+                                                   .DisconnectEverythingWhen(isDeactivated)
+                                                   .OnException(exception =>
+                                                   {
+                                                       /* log or do something with it */
+                                                   });
+
+        // Will be cancelled on deactivation, of if the username signal changes during the await
+        IsUsernameValid = computedFactory.AsyncComputed(async cancellationToken => await IsUsernameValidAsync(Username.Value, cancellationToken),
+                                                        false, 
+                                                        ConcurrentChangeStrategy.CancelCurrent);
+
+        
+        // async computed signals have a (sync) signal that notifies us when the async computation is running
+        CanLogin = computedFactory.Computed(() => !IsUsernameValid.IsComputing.Value
+                                                  && IsUsernameValid.Value
+                                                  && !string.IsNullOrWhiteSpace(Password.Value));
+
+        computedFactory.Effect(UpdateApiCalls);
+
+        // This signal will be recomputed both when the collection changes, and when endDate of the last element changes automatically!
+        TotalApiCallsText = computedFactory.Computed(() =>
+        {
+            var lastCall = ApiCalls.Value.LastOrDefault();
+            return $"Total api calls: {ApiCalls.Value.Count}. Last started at {lastCall?.StartedAt}, and ended at {lastCall?.EndedAt.Value}";
+        })!;
+
+        // Signals are observable, so they can easily integrated with reactiveUI
+        LoginCommand = ReactiveCommand.Create(() => { /* login.. */ }, CanLogin);
+    }
+
+    public ViewModelActivator Activator { get; } = new();
+    public ReactiveCommand<Unit, Unit> LoginCommand { get; }
+    public Signal<string?> Username { get; } = new("");
+    public Signal<string> Password { get; } = new("");
+    public IAsyncReadOnlySignal<bool> IsUsernameValid { get; }
+    public IReadOnlySignal<bool> CanLogin { get; }
+    public IReadOnlySignal<string> TotalApiCallsText { get; }
+    public IReadOnlySignal<ObservableCollection<ApiCall>> ApiCalls { get; } = new ObservableCollection<ApiCall>().ToCollectionSignal();
+
+    async Task<bool> IsUsernameValidAsync(string? username, CancellationToken cancellationToken)
+    {
+        await Task.Delay(3000, cancellationToken);
+        return username?.Length > 2;
+    }
+    void UpdateApiCalls()
+    {
+        var isComputingUsername = IsUsernameValid.IsComputing.Value;
+        using var _ = Signal.UntrackedScope();
+
+        if (isComputingUsername)
+        {
+            ApiCalls.Value.Add(new ApiCall(startedAt: DateTime.Now));
+            return;
+        }
+
+        var call = ApiCalls.Value.LastOrDefault();
+        if (call is { EndedAt.Value: null })
+        {
+            call.EndedAt.Value = DateTime.Now;
+        }
+    }
+}
+
+public class ApiCall(DateTime startedAt)
+{
+    public DateTime StartedAt => startedAt;
+    public Signal<DateTime?> EndedAt { get; } = new();
+}
+```
+
+
+## Example 3
+```c#
 public class YoungestPersonViewModel
 {
     public YoungestPersonViewModel()
@@ -85,20 +167,20 @@ public class City
 public record PersonCoordinates(Person Person, Room Room, House House, City City);
 ```
 Every signal implements the IObservable interface, so we can apply against them all ReactiveX operators we want.
-## `Singal<T>`
+## `Signal<T>`
 ```c#
     public Signal<Person> Person { get; } = new();
     public Signal<Person> Person2 { get; } = new(config => config with { Comparer = new CustomPersonEqualityComparer() });
 ```
 
-A `Singal<T>` is a wrapper around a `T`. It has a property `Value` that can be set, and that when changed raises the INotifyPropertyChanged event.
+A `Signal<T>` is a wrapper around a `T`. It has a property `Value` that can be set, and that when changed raises the INotifyPropertyChanged event.
 
 
 It is possible to specify a custom `EqualityComparer` that will be used to check if raise the `PropertyChanged` event. It is also possible to force it to raise the event everytime someone sets the property
 
-## `CollectionSingal<TObservableCollection>`
+## `CollectionSignal<TObservableCollection>`
 
-A `CollectionSingal<TObservableCollection>` is a wrapper around an `ObservableCollection` (or in general something that implements the `INotifyCollectionChanged` interface). It listens to both changes of its Value Property, and modifications of the `ObservableCollection` it is wrapping
+A `CollectionSignal<TObservableCollection>` is a wrapper around an `ObservableCollection` (or in general something that implements the `INotifyCollectionChanged` interface). It listens to both changes of its Value Property, and modifications of the `ObservableCollection` it is wrapping
 
 
 It is possible to specify a custom `EqualityComparer` that will be used to check if raise the `PropertyChanged` event. It is also possible to force it to raise the event everytime someone sets the property
@@ -142,7 +224,7 @@ Basically the getter (not the setter!) of the Signals property Value raises a st
 
 This is used by the Computed signal before executing the computation function.
 
-The computed signals register to that event (filtering out notifications of other threads), and in that way they know, when the function returns, what are the signals that have been just accessed.
+The computed signals register to that event (filtering out notifications of other signals, using some async locals state), and in that way they know, when the function returns, what are the signals that have been just accessed.
 
 At this point it subscribes to the changes of all those signals in order to know when it should recompute again the value. 
 
