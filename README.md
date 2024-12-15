@@ -228,7 +228,7 @@ It automatically recognize which are the signals it depends by, and listen for t
 
 It is possible to specify whether or not to subscribe weakly (default option), or strongly. It is possible also here to specify a custom `EqualityComparer`.
 
-Ususually you want to stop all asynchronous computation according to some boolean condition.
+Usuually you want to stop all asynchronous computation according to some boolean condition.
 This can be easily done via `ComputedSignalFactory.DisconnectEverythingWhen(isDeactivated)`. Whenever the isDeactivated observables notfies `true`, every pending async computation will be cancelled. Later on, when it notifies a `false`, all the computed signals will be recomputed again. 
 
 You can find useful also `CancellationSignal.Create(booleanObservable)`, that converts a boolean observable into a `IReadOnlySignal<CancellationToken>`, that automatically creates, cancels and disposes new cancellation tokens according to a boolean observable.
@@ -240,7 +240,7 @@ In an async computed signal, the signals it depends by can be changed while the 
 
 - `ConcurrentChangeStrategy.ScheduleNext`: The current cancellationToken will NOT be cancelled, and a new computation will be queued up immediately after the current. Note that only 1 computation can be queued up at most. So using this option, multiple concurrent changes are equivalent to a single concurrent change.
 
-Note also that what already said about `DisconnectEverythingWhen` method is indipendent from that `ConcurrentChangeStrategy` enum. So in both cases, when the disconnection notification arrive, the async signal will be cancelled.
+Note also that what already said about `DisconnectEverythingWhen` method is independent from that `ConcurrentChangeStrategy` enum. So in both cases, when the disconnection notification arrive, the async computation will be cancelled.
 
 ### How it works?
 
