@@ -1,5 +1,7 @@
 ﻿using System.Reactive.Concurrency;
 using System.Reactive.Disposables;
+using System.Reactive.Linq;
+using System.Reactive.Threading.Tasks;
 using FluentAssertions;
 
 namespace SignalsDotnet.Tests;
@@ -72,10 +74,10 @@ public class EffectTests
             executionsCount++;
         }, scheduler);
         executionsCount.Should().Be(1);
-        
+
         number2.Value = 4;
         number2.Value = 3;
-        
+
         number1.Value = 4;
         number1.Value = 3;
         executionsCount.Should().Be(1);
@@ -94,38 +96,43 @@ public class EffectTests
     [Fact]
     public void EffectsShouldRunAtTheEndOfAtomicOperations()
     {
-        var number1 = new Signal<int>();
-        var number2 = new Signal<int>();
-
-        int sum = -1;
-        _ = new Effect(() => sum = number1.Value + number2.Value);
-        sum.Should().Be(0);
-
-        Effect.AtomicOperation(() =>
+        Enumerable.Range(1,33)
+                  .Select(__ => Observable.FromAsync(() => Task.Run(() =>
         {
-            number1.Value = 1;
-            sum.Should().Be(0);
+            var number1 = new Signal<int>();
+            var number2 = new Signal<int>();
 
-            number1.Value = 2;
-            sum.Should().Be(0);
-        });
-        sum.Should().Be(2);
+            int sum = -1;
+            _ = new Effect(() => sum = number1.Value + number2.Value);
+            //sum.Should().Be(0);
 
-        Effect.AtomicOperation(() =>
-        {
-            number2.Value = 2;
+            Effect.AtomicOperation(() =>
+            {
+                number1.Value = 1;
+                sum.Should().Be(0);
+
+                number1.Value = 2;
+                sum.Should().Be(0);
+            });
             sum.Should().Be(2);
 
             Effect.AtomicOperation(() =>
             {
-                number2.Value = 3;
+                number2.Value = 2;
+                sum.Should().Be(2);
+
+                Effect.AtomicOperation(() =>
+                {
+                    number2.Value = 3;
+                    sum.Should().Be(2);
+                });
+
                 sum.Should().Be(2);
             });
 
-            sum.Should().Be(2);
-        });
+            sum.Should().Be(5);
+        }))).Merge().ToTask().Wait();
 
-        sum.Should().Be(5);
     }
 
     [Fact]
@@ -150,7 +157,7 @@ public class EffectTests
             sum.Should().Be(0);
         });
         sum.Should().Be(0);
-        
+
         scheduler.ExecuteAllPendingActions();
         sum.Should().Be(2);
     }
@@ -172,7 +179,7 @@ public class TestScheduler : IScheduler
         return Disposable.Empty;
     }
 
-    public IDisposable Schedule<TState>(TState state, TimeSpan dueTime, Func<IScheduler, TState, IDisposable> action) => Schedule(state,       action);
+    public IDisposable Schedule<TState>(TState state, TimeSpan dueTime, Func<IScheduler, TState, IDisposable> action) => Schedule(state, action);
     public IDisposable Schedule<TState>(TState state, DateTimeOffset dueTime, Func<IScheduler, TState, IDisposable> action) => Schedule(state, action);
     public DateTimeOffset Now => DateTimeOffset.UnixEpoch;
 }

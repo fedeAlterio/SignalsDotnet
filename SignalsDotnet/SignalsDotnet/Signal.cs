@@ -16,6 +16,8 @@ public abstract partial class Signal
 
     internal static IObservable<IReadOnlySignal> SignalsRequested() => Observable.Defer(() =>
     {
+        var isSameContext = new AsyncLocal<bool>();
+        isSameContext.Value = true;
         uint startSignalRecursion;
         lock (_computedSignalAffinityIndex)
         {
@@ -24,6 +26,11 @@ public abstract partial class Signal
 
         return _signalsRequested.Where(_ =>
         {
+            if (!isSameContext.Value)
+            {
+                return false;
+            }
+
             lock (_computedSignalAffinityIndex)
             {
                 return _computedSignalAffinityIndex.Value == startSignalRecursion;

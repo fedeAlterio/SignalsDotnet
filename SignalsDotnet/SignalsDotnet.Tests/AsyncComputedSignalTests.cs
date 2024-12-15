@@ -62,7 +62,7 @@ public class AsyncComputedSignalTests
             }
             else
             {
-                tcs.SetResult();
+                tcs.TrySetResult();
             }
 
             return sum;
