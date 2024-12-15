@@ -23,19 +23,12 @@ internal static class GenericHelpers
         {
             try
             {
-                using (Signal.ChangeComputedSignalAffinity())
-                {
-                    isExecutingSignal.Value = true;
-                }
-
+                isExecutingSignal.Value = true;
                 return await func(token);
             }
             finally
             {
-                using (Signal.ChangeComputedSignalAffinity())
-                {
-                    isExecutingSignal.Value = false;
-                }
+                isExecutingSignal.Value = false;
             }
         };
     }

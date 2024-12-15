@@ -1,5 +1,4 @@
 ﻿using System.ComponentModel;
-using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
@@ -9,10 +8,8 @@ namespace SignalsDotnet;
 
 public abstract partial class Signal
 {
-    static readonly AsyncLocal<int> _untrackedCounter = new();
     static readonly ISubject<IReadOnlySignal> _signalsRequested = Subject.Synchronize(new Subject<IReadOnlySignal>());
     static readonly AsyncLocal<uint> _computedSignalAffinityIndex = new();
-
 
     internal static IObservable<IReadOnlySignal> SignalsRequested() => Observable.Defer(() =>
     {
@@ -38,7 +35,7 @@ public abstract partial class Signal
         });
     });
 
-    internal static IDisposable ChangeComputedSignalAffinity()
+    public static IDisposable UntrackedScope()
     {
         lock (_computedSignalAffinityIndex)
         {
@@ -54,36 +51,47 @@ public abstract partial class Signal
         });
     }
 
+    public static async Task<T> Untracked<T>(Func<Task<T>> action)
+    {
+        if (action is null)
+            throw new ArgumentNullException(nameof(action));
+
+        using (UntrackedScope())
+        {
+            return await action();
+        }
+    }
+    public static async Task Untracked(Func<Task> action)
+    {
+        if (action is null)
+            throw new ArgumentNullException(nameof(action));
+
+        using (UntrackedScope())
+        {
+            await action();
+        }
+    }
+
     public static T Untracked<T>(Func<T> action)
     {
         if (action is null)
             throw new ArgumentNullException(nameof(action));
 
-        lock (_untrackedCounter)
-        {
-            _untrackedCounter.Value++;
-        }
-
-        try
+        using (UntrackedScope())
         {
             return action();
-        }
-        finally
-        {
-            lock (_untrackedCounter)
-            {
-                _untrackedCounter.Value--;
-            }
         }
     }
 
     public static void Untracked(Action action)
     {
-        Untracked(() =>
+        if (action is null)
+            throw new ArgumentNullException(nameof(action));
+
+        using (UntrackedScope())
         {
             action();
-            return Unit.Default;
-        });
+        }
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -102,23 +110,17 @@ public abstract partial class Signal
         if (raiseOnlyWhenChanged && equalityComparer.Equals(field, value))
             return;
 
-        field = value;
-        OnPropertyChanged(propertyName);
+        using (UntrackedScope())
+        {
+            field = value;
+            OnPropertyChanged(propertyName);
+        }
     }
 
 
     protected static T GetValue<T>(IReadOnlySignal property, in T value)
     {
-        bool shouldNotify;
-        lock (_untrackedCounter)
-        {
-            shouldNotify = _untrackedCounter.Value == 0;
-        }
-
-        if (shouldNotify)
-        {
-            _signalsRequested.OnNext(property);
-        } 
+        _signalsRequested.OnNext(property);
 
         return value;
     }

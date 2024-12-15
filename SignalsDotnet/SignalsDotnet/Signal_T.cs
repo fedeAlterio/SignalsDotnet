@@ -39,6 +39,7 @@ public class Signal<T> : Signal, IReadOnlySignal<T?>, IEquatable<Signal<T>>
     {
         if (other is null)
             return false;
+
         if (ReferenceEquals(this, other))
             return true;
 
