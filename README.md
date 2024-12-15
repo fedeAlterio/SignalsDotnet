@@ -199,25 +199,49 @@ public CollectionSignal<ObservableCollection<Person>> People { get; } = new(coll
 
 ## Computed Signals
 ```c#
-public class LoginViewModel
-{
-  public LoginViewModel()
-  {
-      CanLogin = Signal.Computed(() => !string.IsNullOrWhiteSpace(Username.Value) && !string.IsNullOrWhiteSpace(Password.Value));
-  }
+ public LoginViewModel()
+ {
+     IObservable<bool> isDeactivated = this.IsDeactivated();
 
-  public Signal<string> Username { get; } = new();
-  public Signal<string> Password { get; } = new();
-  public IReadOnlySignal<bool> CanLogin { get; }
-}
+     var computedFactory = ComputedSignalFactory.Default
+                                                .DisconnectEverythingWhen(isDeactivated)
+                                                .OnException(exception =>
+                                                {
+                                                    /* log or do something with it */
+                                                });
+
+     IsUsernameValid = computedFactory.AsyncComputed(async cancellationToken => await IsUsernameValidAsync(Username.Value, cancellationToken),
+                                                     false, 
+                                                     ConcurrentChangeStrategy.CancelCurrent);
+
+     
+     CanLogin = computedFactory.Computed(() => !IsUsernameValid.IsComputing.Value
+                                               && IsUsernameValid.Value
+                                               && !string.IsNullOrWhiteSpace(Password.Value));
+ }
 ```
 A computed signal, is a signal that depends by other signals. 
 
-Basically to create it you need to pass a function that computes the value.
+Basically to create it you need to pass a function that computes the value. That function can be synchronous or asynchronous.
 
 It automatically recognize which are the signals it depends by, and listen for them to change. Whenever a signal changes, the function is executed again, and a new value is produced (the `INotifyPropertyChanged` is raised).
 
-It is possible to specify whether or not to subscribe weakly (default option), or strongly. It is possible also here to specify a custom `EqualityComparer`
+It is possible to specify whether or not to subscribe weakly (default option), or strongly. It is possible also here to specify a custom `EqualityComparer`.
+
+Ususually you want to stop all asynchronous computation according to some boolean condition.
+This can be easily done via `ComputedSignalFactory.DisconnectEverythingWhen(isDeactivated)`. Whenever the isDeactivated observables notfies `true`, every pending async computation will be cancelled. Later on, when it notifies a `false`, all the computed signals will be recomputed again. 
+
+You can find useful also `CancellationSignal.Create(booleanObservable)`, that converts a boolean observable into a `IReadOnlySignal<CancellationToken>`, that automatically creates, cancels and disposes new cancellation tokens according to a boolean observable.
+
+## ConcurrentChangeStrategy
+In an async computed signal, the signals it depends by can be changed while the computation function is running. You can use the enum `ConcurrentChangeStrategy` to specify what you want to do in that cases. For now there are 2 options:
+
+- `ConcurrentChangeStrategy.CancelCurrent`: The current cancellationToken will be cancelled, and a new computation will start immediately
+
+- `ConcurrentChangeStrategy.ScheduleNext`: The current cancellationToken will NOT be cancelled, and a new computation will be queued up immediately after the current. Note that only 1 computation can be queued up at most. So using this option, multiple concurrent changes are equivalent to a single concurrent change.
+
+Note also that what already said about `DisconnectEverythingWhen` method is indipendent from that `ConcurrentChangeStrategy` enum. So in both cases, when the disconnection notification arrive, the async signal will be cancelled.
+
 ### How it works?
 
 Basically the getter (not the setter!) of the Signals property Value raises a static event that notifies someone just requested that signal. 
