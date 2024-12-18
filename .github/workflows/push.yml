@@ -21,3 +21,7 @@ jobs:
       run: dotnet build -c Release  ./SignalsDotnet --no-restore
     - name: Test
       run: dotnet test -c Release  ./SignalsDotnet/SignalsDotnet.Tests --no-build --verbosity normal
+    - name: Benchmarks
+      run: | 
+        dotnet build -c Release  ./SignalsDotnet/SignalsDotnet.PeformanceTests/ 
+        dotnet run -c Release --project ./SignalsDotnet/SignalsDotnet.PeformanceTests/

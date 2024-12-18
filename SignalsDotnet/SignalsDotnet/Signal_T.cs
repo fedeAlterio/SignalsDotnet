@@ -29,10 +29,11 @@ public class Signal<T> : Signal, IReadOnlySignal<T?>, IEquatable<Signal<T>>
         get => GetValue(this, in _value);
         set => SetValue(ref _value, value, _configuration.Comparer, _configuration.RaiseOnlyWhenChanged);
     }
+
     public T UntrackedValue => _value;
     object? IReadOnlySignal.UntrackedValue => UntrackedValue;
 
-    public IDisposable Subscribe(IObserver<T?> observer) => this.OnPropertyChanged(nameof(Value), () => Value)
+    public IDisposable Subscribe(IObserver<T?> observer) => this.OnPropertyChanged()
                                                                 .Subscribe(observer);
 
     public bool Equals(Signal<T>? other)

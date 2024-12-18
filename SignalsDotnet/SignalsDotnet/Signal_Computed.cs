@@ -1,12 +1,9 @@
 ﻿using System.Reactive;
-using System.Reactive.Disposables;
 using System.Reactive.Linq;
-using System.Reactive.Subjects;
 using SignalsDotnet.Configuration;
 using SignalsDotnet.Helpers;
 using SignalsDotnet.Internals;
 using SignalsDotnet.Internals.Helpers;
-using ObservableEx = SignalsDotnet.Internals.Helpers.ObservableEx;
 
 namespace SignalsDotnet;
 
@@ -109,116 +106,6 @@ public partial class Signal
                                                          Func<Unit, IObservable<Unit>>? scheduler = null,
                                                          ConcurrentChangeStrategy concurrentChangeStrategy = default)
     {
-        if (func is null)
-            throw new ArgumentNullException(nameof(func));
-
-        if (fallbackValue is null)
-            throw new ArgumentNullException(nameof(fallbackValue));
-
-        return Observable.Create<T>(observer =>
-        {
-            var isDisposed = new BehaviorSubject<bool>(false);
-
-            ObservableEx.FromAsyncUsingAsyncContext(async token => await ComputeResult(func, fallbackValue, scheduler, concurrentChangeStrategy, token))
-                        .TakeUntil(isDisposed.Where(x => x))
-                        .Subscribe(OnNewResult);
-
-            void OnNewResult(ComputationResult<T> result)
-            {
-                var valueNotified = false;
-
-                result.ShouldComputeNextResult.SelectMany(_ =>
-                      {
-                          NotifyValueIfNotAlready();
-                          return ObservableEx.FromAsyncUsingAsyncContext(async token => await ComputeResult(func, fallbackValue, scheduler, concurrentChangeStrategy, token));
-                      })
-                      .Take(1)
-                      .TakeUntil(isDisposed.Where(x => x))
-                      .Subscribe(OnNewResult);
-
-                NotifyValueIfNotAlready();
-
-                // We notify a new value only if the func() evaluation succeeds.
-                void NotifyValueIfNotAlready()
-                {
-                    if (valueNotified)
-                        return;
-
-                    valueNotified = true;
-                    if (result.ResultOptional.TryGetValue(out var propertyValue))
-                        observer.OnNext(propertyValue);
-                }
-            }
-
-            return Disposable.Create(() => isDisposed.OnNext(true));
-        });
+        return new ComputedObservable<T>(func, fallbackValue, scheduler, concurrentChangeStrategy);
     }
-
-    static async ValueTask<ComputationResult<T>> ComputeResult<T>(Func<CancellationToken, ValueTask<T>> resultFunc,
-                                                                  Func<Optional<T>> fallbackValue,
-                                                                  Func<Unit, IObservable<Unit>>? scheduler,
-                                                                  ConcurrentChangeStrategy concurrentChangeStrategy,
-                                                                  CancellationToken cancellationToken)
-    {
-        var referenceEquality = ReferenceEqualityComparer.Instance;
-        HashSet<IReadOnlySignal> signalRequested = new(referenceEquality);
-        Optional<T> result;
-
-        var signalChangedObservable = SignalsRequested().Where(x => signalRequested.Add(x))
-                                                        .Select(x => x.Changed.Skip(1))
-                                                        .Merge();
-
-        if (concurrentChangeStrategy == ConcurrentChangeStrategy.CancelCurrent)
-        {
-            var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            cancellationToken = cts.Token;
-            signalChangedObservable = signalChangedObservable.Do(_ => cts.Cancel())
-                                                             .Finally(cts.Dispose);
-        }
-
-
-        if (scheduler is not null)
-        {
-            signalChangedObservable = signalChangedObservable.Select(scheduler)
-                                                             .Switch();
-        }
-
-        var shouldComputeNextResult = signalChangedObservable.Take(1)
-                                                             .Replay(1);
-
-
-        var disconnect = shouldComputeNextResult.Connect();
-
-        try
-        {
-            result = new(await resultFunc(cancellationToken));
-        }
-        catch (OperationCanceledException)
-        {
-            result = Optional<T>.Empty;
-        }
-        catch
-        {
-            // If something fails, the property will have the previous result,
-            // We still have to observe for the properties to change (maybe next time the exception will not be thrown)
-            try
-            {
-                result = fallbackValue();
-            }
-            catch
-            {
-                result = Optional<T>.Empty;
-            }
-        }
-
-        var resultObservable = Observable.Create<Unit>(observer =>
-        {
-            shouldComputeNextResult.Subscribe(observer);
-            return disconnect;
-        });
-
-        return new(resultObservable, result);
-    }
-
-    record struct ComputationResult<T>(IObservable<Unit> ShouldComputeNextResult, Optional<T> ResultOptional);
 }

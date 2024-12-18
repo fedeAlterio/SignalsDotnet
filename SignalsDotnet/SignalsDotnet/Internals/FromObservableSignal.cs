@@ -65,7 +65,7 @@ internal class FromObservableSignal<T> : Signal, IReadOnlySignal<T?>, IEquatable
         _someoneAskedValueSubject.Dispose();
     }
 
-    public IDisposable Subscribe(IObserver<T?> observer) => this.OnPropertyChanged(nameof(Value), () => Value)
+    public IDisposable Subscribe(IObserver<T?> observer) => this.OnPropertyChanged()
                                                                 .Subscribe(observer);
 
     public bool Equals(FromObservableSignal<T?>? other)

@@ -7,6 +7,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SignalsDotnet", "SignalsDot
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SignalsDotnet.Tests", "SignalsDotnet.Tests\SignalsDotnet.Tests.csproj", "{D6DA2778-8C20-4D1D-A4E7-956FEAE51859}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SignalsDotnet.PeformanceTests", "SignalsDotnet.PeformanceTests\SignalsDotnet.PeformanceTests.csproj", "{C7366C63-2562-435B-B78D-9D51C0649CBA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,8 @@ Global
 		{D6DA2778-8C20-4D1D-A4E7-956FEAE51859}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D6DA2778-8C20-4D1D-A4E7-956FEAE51859}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D6DA2778-8C20-4D1D-A4E7-956FEAE51859}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C7366C63-2562-435B-B78D-9D51C0649CBA}.Debug|Any CPU.ActiveCfg = Debug|AnyCPU
+		{C7366C63-2562-435B-B78D-9D51C0649CBA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

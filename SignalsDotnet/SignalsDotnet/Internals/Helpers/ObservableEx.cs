@@ -1,28 +1,35 @@
-﻿using System.Diagnostics;
-using System.Reactive.Disposables;
-using System.Reactive.Linq;
+﻿using System.Reactive.Disposables;
 
 namespace SignalsDotnet.Internals.Helpers;
 
 internal static class ObservableEx
 {
-    public static IObservable<T> FromAsyncUsingAsyncContext<T>(Func<CancellationToken, Task<T>> asyncAction)
+    public static IObservable<T> FromAsyncUsingAsyncContext<T>(Func<CancellationToken, ValueTask<T>> asyncAction)
     {
-        if (asyncAction is null)
-            throw new ArgumentNullException(nameof(asyncAction));
+        return new FromAsyncContextObservable<T>(asyncAction);
+    }
 
-        return Observable.Create<T>(observer =>
+    public readonly struct FromAsyncContextObservable<T> : IObservable<T>
+    {
+        readonly Func<CancellationToken, ValueTask<T>> _asyncAction;
+
+        public FromAsyncContextObservable(Func<CancellationToken, ValueTask<T>> asyncAction)
+        {
+            _asyncAction = asyncAction;
+        }
+
+        public IDisposable Subscribe(IObserver<T> observer)
         {
             var disposable = new CancellationDisposable();
             var token = disposable.Token;
 
             try
             {
-                var task = asyncAction(token);
-                if (task.IsFaulted)
+                var task = _asyncAction(token);
+                if (task.IsCompleted)
                 {
-                    var exception = task.GetSingleException();
-                    observer.OnError(exception);
+                    observer.OnNext(task.GetAwaiter().GetResult());
+                    observer.OnCompleted();
                     return disposable;
                 }
 
@@ -34,9 +41,9 @@ internal static class ObservableEx
             }
 
             return disposable;
-        });
+        }
 
-        async void BindObserverToTask(Task<T> task, IObserver<T> observer)
+        static async void BindObserverToTask(ValueTask<T> task, IObserver<T> observer)
         {
             try
             {
@@ -56,17 +63,5 @@ internal static class ObservableEx
                 }
             }
         }
-    }
-
-    static Exception GetSingleException(this Task t)
-    {
-        Debug.Assert(t is { IsFaulted: true, Exception: not null });
-
-        if (t.Exception!.InnerException != null)
-        {
-            return t.Exception.InnerException;
-        }
-
-        return t.Exception;
     }
 }

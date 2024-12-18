@@ -1,5 +1,4 @@
 ﻿using System.ComponentModel;
-using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Runtime.CompilerServices;
@@ -8,47 +7,43 @@ namespace SignalsDotnet;
 
 public abstract partial class Signal
 {
-    static readonly ISubject<IReadOnlySignal> _signalsRequested = Subject.Synchronize(new Subject<IReadOnlySignal>());
+    static readonly ISubject<IReadOnlySignal> _signalsRequested = new Subject<IReadOnlySignal>();
     static readonly AsyncLocal<uint> _computedSignalAffinityIndex = new();
-
-    internal static IObservable<IReadOnlySignal> SignalsRequested() => Observable.Defer(() =>
+    internal static IObservable<IReadOnlySignal> SignalsRequested()
     {
-        var isSameContext = new AsyncLocal<bool>();
-        isSameContext.Value = true;
-        uint startSignalRecursion;
-        lock (_computedSignalAffinityIndex)
+        return Observable.Defer(() =>
         {
-            startSignalRecursion = _computedSignalAffinityIndex.Value;
-        }
-
-        return _signalsRequested.Where(_ =>
-        {
-            if (!isSameContext.Value)
-            {
-                return false;
-            }
-
+            var isSameContext = new AsyncLocal<bool>();
+            isSameContext.Value = true;
+            uint startSignalRecursion;
             lock (_computedSignalAffinityIndex)
             {
-                return _computedSignalAffinityIndex.Value == startSignalRecursion;
+                startSignalRecursion = _computedSignalAffinityIndex.Value;
             }
-        });
-    });
 
-    public static IDisposable UntrackedScope()
+            return _signalsRequested.Where(_ =>
+            {
+                if (!isSameContext.Value)
+                {
+                    return false;
+                }
+
+                lock (_computedSignalAffinityIndex)
+                {
+                    return _computedSignalAffinityIndex.Value == startSignalRecursion;
+                }
+            });
+        });
+    }
+
+    public static UntrackedReleaserDisposable UntrackedScope()
     {
         lock (_computedSignalAffinityIndex)
         {
             _computedSignalAffinityIndex.Value++;
         }
 
-        return Disposable.Create(() =>
-        {
-            lock (_computedSignalAffinityIndex)
-            {
-                _computedSignalAffinityIndex.Value--;
-            }
-        });
+        return new UntrackedReleaserDisposable();
     }
 
     public static async Task<T> Untracked<T>(Func<Task<T>> action)
@@ -61,6 +56,7 @@ public abstract partial class Signal
             return await action();
         }
     }
+
     public static async Task Untracked(Func<Task> action)
     {
         if (action is null)
@@ -96,11 +92,6 @@ public abstract partial class Signal
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
-
     protected void SetValue<T>(ref T field,
                                T value,
                                IEqualityComparer<T> equalityComparer,
@@ -109,11 +100,17 @@ public abstract partial class Signal
     {
         if (raiseOnlyWhenChanged && equalityComparer.Equals(field, value))
             return;
+        field = value;
+
+        var propertyChanged = PropertyChanged;
+        if (propertyChanged is null)
+        {
+            return;
+        }
 
         using (UntrackedScope())
         {
-            field = value;
-            OnPropertyChanged(propertyName);
+            propertyChanged(this, new PropertyChangedEventArgs(propertyName));
         }
     }
 
@@ -124,4 +121,16 @@ public abstract partial class Signal
 
         return value;
     }
+
+    public readonly struct UntrackedReleaserDisposable : IDisposable
+    {
+        public void Dispose()
+        {
+            lock (_computedSignalAffinityIndex)
+            {
+                _computedSignalAffinityIndex.Value--;
+            }
+        }
+    }
 }
+
