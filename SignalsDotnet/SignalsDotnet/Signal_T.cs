@@ -1,5 +1,4 @@
 ﻿using System.Reactive;
-using System.Reactive.Linq;
 using SignalsDotnet.Configuration;
 using SignalsDotnet.Internals.Helpers;
 
@@ -33,7 +32,7 @@ public class Signal<T> : Signal, IReadOnlySignal<T?>, IEquatable<Signal<T>>
     public T UntrackedValue => _value;
     object? IReadOnlySignal.UntrackedValue => UntrackedValue;
 
-    public IDisposable Subscribe(IObserver<T?> observer) => this.OnPropertyChanged()
+    public IDisposable Subscribe(IObserver<T?> observer) => this.OnPropertyChanged(false)
                                                                 .Subscribe(observer);
 
     public bool Equals(Signal<T>? other)
@@ -65,5 +64,6 @@ public class Signal<T> : Signal, IReadOnlySignal<T?>, IEquatable<Signal<T>>
     public static bool operator !=(Signal<T> a, Signal<T> b) => !(a == b);
 
     public override int GetHashCode() => _value is null ? 0 : _configuration.Comparer.GetHashCode(_value!);
-    public IObservable<Unit> Changed => this.Select(static _ => Unit.Default);
+    public IObservable<Unit> Changed => this.OnPropertyChangedAsUnit(false);
+    public IObservable<Unit> FutureChanges => this.OnPropertyChangedAsUnit(true);
 }

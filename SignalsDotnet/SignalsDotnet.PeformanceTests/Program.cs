@@ -18,7 +18,7 @@ public class BenchmarkConfig : ManualConfig
 
 [MemoryDiagnoser]
 [Config(typeof(BenchmarkConfig))]
-public class ComputedBenchmarks : IDisposable
+public class ComputedBenchmarks
 {
     readonly Signal<int> _signal = new(0);
     readonly IReadOnlySignal<int> _computed;
@@ -36,10 +36,5 @@ public class ComputedBenchmarks : IDisposable
         _signal.Value = 0;
         _signal.Value = 1;
         return _computed.Value;
-    }
-
-    public void Dispose()
-    {
-
     }
 }

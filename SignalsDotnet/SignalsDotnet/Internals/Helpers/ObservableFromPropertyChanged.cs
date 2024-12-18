@@ -1,27 +1,106 @@
 ﻿using System.ComponentModel;
+using System.Reactive;
 
 namespace SignalsDotnet.Internals.Helpers;
 
 internal static class ObservableFromPropertyChanged
 {
-    public static FromPropertyChangedObservable<T> OnPropertyChanged<T>(this IReadOnlySignal<T> @this)
+    public static FromPropertyChangedObservable<T> OnPropertyChanged<T>(this IReadOnlySignal<T> @this, bool futureChangesOnly)
     {
-        return new FromPropertyChangedObservable<T>(@this);
+        return new FromPropertyChangedObservable<T>(@this, futureChangesOnly);
     }
+
+    public static FromPropertyChangedObservableUnit OnPropertyChangedAsUnit<T>(this IReadOnlySignal<T> @this, bool futureChangesOnly)
+    {
+        return new FromPropertyChangedObservableUnit(@this, futureChangesOnly);
+    }
+
+    public readonly struct FromPropertyChangedObservableUnit : IObservable<Unit>
+    {
+        readonly IReadOnlySignal _signal;
+        readonly bool _futureChangesOnly;
+
+        public FromPropertyChangedObservableUnit(IReadOnlySignal signal, bool futureChangesOnly)
+        {
+            _signal = signal;
+            _futureChangesOnly = futureChangesOnly;
+        }
+
+        public IDisposable Subscribe(IObserver<Unit> observer)
+        {
+            return new FromPropertyChangedSubscriptionUnit(observer, this);
+        }
+
+
+        class FromPropertyChangedSubscriptionUnit : IDisposable
+        {
+            readonly IObserver<Unit> _observer;
+            readonly FromPropertyChangedObservableUnit _observable;
+            readonly object _locker = new();
+            bool _isDisposed;
+
+            public FromPropertyChangedSubscriptionUnit(IObserver<Unit> observer, FromPropertyChangedObservableUnit observable)
+            {
+                _observer = observer;
+                _observable = observable;
+                if (_observable._futureChangesOnly)
+                {
+                    observable._signal.PropertyChanged += OnPropertyChanged;
+                    return;
+                }
+
+                lock (_locker)
+                {
+                    _observer.OnNext(Unit.Default);
+                    if (_isDisposed)
+                    {
+                        return;
+                    }
+
+                    observable._signal.PropertyChanged += OnPropertyChanged;
+                }
+            }
+
+            void OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
+            {
+                _observer.OnNext(Unit.Default);
+            }
+
+            public void Dispose()
+            {
+                if (!_observable._futureChangesOnly)
+                {
+                    lock (_locker)
+                    {
+                        if (_isDisposed)
+                            return;
+
+                        _isDisposed = true;
+                    }
+                }
+
+                _observable._signal.PropertyChanged -= OnPropertyChanged;
+            }
+        }
+    }
+
 
     public readonly struct FromPropertyChangedObservable<T> : IObservable<T>
     {
         readonly IReadOnlySignal<T> _signal;
+        readonly bool _futureChangesOnly;
 
-        public FromPropertyChangedObservable(IReadOnlySignal<T> signal)
+        public FromPropertyChangedObservable(IReadOnlySignal<T> signal, bool futureChangesOnly)
         {
             _signal = signal;
+            _futureChangesOnly = futureChangesOnly;
         }
 
         public IDisposable Subscribe(IObserver<T> observer)
         {
             return new FromPropertyChangedSubscription(observer, this);
         }
+
 
         class FromPropertyChangedSubscription : IDisposable
         {
@@ -34,6 +113,12 @@ internal static class ObservableFromPropertyChanged
             {
                 _observer = observer;
                 _observable = observable;
+                if (_observable._futureChangesOnly)
+                {
+                    observable._signal.PropertyChanged += OnPropertyChanged;
+                    return;
+                }
+
                 lock (_locker)
                 {
                     _observer.OnNext(_observable._signal.Value);
@@ -53,12 +138,15 @@ internal static class ObservableFromPropertyChanged
 
             public void Dispose()
             {
-                lock (_locker)
+                if (!_observable._futureChangesOnly)
                 {
-                    if (_isDisposed)
-                        return;
+                    lock (_locker)
+                    {
+                        if (_isDisposed)
+                            return;
 
-                    _isDisposed = true;
+                        _isDisposed = true;
+                    }
                 }
 
                 _observable._signal.PropertyChanged -= OnPropertyChanged;

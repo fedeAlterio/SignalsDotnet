@@ -1,7 +1,6 @@
 ﻿using SignalsDotnet.Helpers;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
-using System.Reactive.Subjects;
 using System.Reactive;
 using ObservableEx = SignalsDotnet.Internals.Helpers.ObservableEx;
 
@@ -32,6 +31,7 @@ internal class ComputedObservable<T> : IObservable<T>
         readonly ComputedObservable<T> _observable;
         readonly IObserver<T> _observer;
         readonly MultipleAssignmentDisposable _disposable = new();
+
         public Subscription(ComputedObservable<T> observable, IObserver<T> observer)
         {
             _observable = observable;
@@ -74,12 +74,12 @@ internal class ComputedObservable<T> : IObservable<T>
             var referenceEquality = ReferenceEqualityComparer.Instance;
             HashSet<IReadOnlySignal> signalRequested = new(referenceEquality);
             Optional<T> result;
-            BehaviorSubject<bool> stopListeningForSignals = new(false);
+            SingleNotificationObservable<bool> stopListeningForSignals = new();
 
             var signalChangedObservable = Signal.SignalsRequested()
-                                                .TakeUntil(stopListeningForSignals.Where(x => x))
-                                                .Where(x => signalRequested.Add(x))
-                                                .Select(x => x.Changed.Skip(1))
+                                                .TakeUntil(stopListeningForSignals)
+                                                .Where(signalRequested.Add)
+                                                .Select(static x => x.FutureChanges)
                                                 .Merge()
                                                 .Take(1);
 
@@ -110,8 +110,7 @@ internal class ComputedObservable<T> : IObservable<T>
                 }
                 finally
                 {
-                    stopListeningForSignals.OnNext(true);
-                    stopListeningForSignals.OnCompleted();
+                    stopListeningForSignals.SetResult(true);
                 }
             }
             catch (OperationCanceledException)
@@ -132,10 +131,7 @@ internal class ComputedObservable<T> : IObservable<T>
                 }
             }
 
-            var resultObservable = new DisconnectOnDisposeObservable<Unit>(shouldComputeNextResult, Disposable.Create(() =>
-            {
-                disconnect.Dispose();
-            }));
+            var resultObservable = new DisconnectOnDisposeObservable<Unit>(shouldComputeNextResult, disconnect);
 
             return new(resultObservable, result);
         }
@@ -145,7 +141,7 @@ internal class ComputedObservable<T> : IObservable<T>
     }
 
     record struct ComputationResult(IObservable<Unit> ShouldComputeNextResult, Optional<T> ResultOptional);
-    class DisconnectOnDisposeObservable<TV> : IObservable<TV>
+    readonly struct DisconnectOnDisposeObservable<TV> : IObservable<TV>
     {
         readonly IObservable<TV> _observable;
         readonly IDisposable _disconnect;
@@ -159,7 +155,50 @@ internal class ComputedObservable<T> : IObservable<T>
         public IDisposable Subscribe(IObserver<TV> observer)
         {
             _observable.Subscribe(observer);
-            return Disposable.Create(() => _disconnect.Dispose());
+            return _disconnect;
         }
+    }
+
+    class SingleNotificationObservable<TNotification> : IObservable<TNotification>, IDisposable
+    {
+        IObserver<TNotification>? _observer;
+        readonly object _locker = new();
+        Optional<TNotification> _value;
+
+        public IDisposable Subscribe(IObserver<TNotification> observer)
+        {
+            lock (_locker)
+            {
+                if (_value.TryGetValue(out var value))
+                {
+                    observer.OnNext(value);
+                    observer.OnCompleted();
+                }
+                else
+                {
+                    _observer = observer;
+                }
+
+                return this;
+            }
+        }
+
+        public void SetResult(TNotification value)
+        {
+            lock (this)
+            {
+                var observer = _observer;
+                if (observer is not null)
+                {
+                    observer.OnNext(value);
+                    observer.OnCompleted();
+                    return;
+                }
+
+                _value = new(value);
+            }
+        }
+
+        public void Dispose() => Interlocked.Exchange(ref _observer, null);
     }
 }

@@ -4,7 +4,7 @@ namespace SignalsDotnet.Internals.Helpers;
 
 internal static class ObservableEx
 {
-    public static IObservable<T> FromAsyncUsingAsyncContext<T>(Func<CancellationToken, ValueTask<T>> asyncAction)
+    public static FromAsyncContextObservable<T> FromAsyncUsingAsyncContext<T>(Func<CancellationToken, ValueTask<T>> asyncAction)
     {
         return new FromAsyncContextObservable<T>(asyncAction);
     }

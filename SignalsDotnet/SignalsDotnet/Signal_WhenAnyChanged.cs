@@ -18,8 +18,8 @@ public abstract partial class Signal
         if (signals.Count == 0)
             return Observable.Empty<Unit>();
 
-        return signals.Select(x => x.Changed)
+        return signals.Select(x => x.FutureChanges)
                       .Merge()
-                      .Skip(signals.Count - 1); // All observable start with a value, so we skip them but one.
+                      .StartWith(Unit.Default);
     }
 }

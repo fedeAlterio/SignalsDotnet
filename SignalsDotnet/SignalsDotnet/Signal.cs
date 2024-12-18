@@ -1,5 +1,5 @@
-﻿using System.ComponentModel;
-using System.Reactive.Linq;
+﻿using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Reactive.Subjects;
 using System.Runtime.CompilerServices;
 
@@ -7,43 +7,27 @@ namespace SignalsDotnet;
 
 public abstract partial class Signal
 {
-    static readonly ISubject<IReadOnlySignal> _signalsRequested = new Subject<IReadOnlySignal>();
-    static readonly AsyncLocal<uint> _computedSignalAffinityIndex = new();
-    internal static IObservable<IReadOnlySignal> SignalsRequested()
+    static uint _nextComputedSignalAffinityValue;
+    static readonly AsyncLocal<uint> _computedSignalAffinityValue = new();
+    static readonly ConcurrentDictionary<uint, Subject<IReadOnlySignal>> _signalRequestedByComputedAffinity = new();
+
+    internal static SignalsRequestedObservable SignalsRequested()
     {
-        return Observable.Defer(() =>
-        {
-            var isSameContext = new AsyncLocal<bool>();
-            isSameContext.Value = true;
-            uint startSignalRecursion;
-            lock (_computedSignalAffinityIndex)
-            {
-                startSignalRecursion = _computedSignalAffinityIndex.Value;
-            }
-
-            return _signalsRequested.Where(_ =>
-            {
-                if (!isSameContext.Value)
-                {
-                    return false;
-                }
-
-                lock (_computedSignalAffinityIndex)
-                {
-                    return _computedSignalAffinityIndex.Value == startSignalRecursion;
-                }
-            });
-        });
+        return new SignalsRequestedObservable();
     }
 
     public static UntrackedReleaserDisposable UntrackedScope()
     {
-        lock (_computedSignalAffinityIndex)
+        uint oldAffinity;
+        lock (_computedSignalAffinityValue)
         {
-            _computedSignalAffinityIndex.Value++;
+            oldAffinity = _computedSignalAffinityValue.Value;
+            _computedSignalAffinityValue.Value = _nextComputedSignalAffinityValue;
+            var currentValue = _nextComputedSignalAffinityValue;
+            _nextComputedSignalAffinityValue = currentValue == uint.MaxValue ? 0 : currentValue + 1;
         }
 
-        return new UntrackedReleaserDisposable();
+        return new UntrackedReleaserDisposable(oldAffinity);
     }
 
     public static async Task<T> Untracked<T>(Func<Task<T>> action)
@@ -100,6 +84,7 @@ public abstract partial class Signal
     {
         if (raiseOnlyWhenChanged && equalityComparer.Equals(field, value))
             return;
+
         field = value;
 
         var propertyChanged = PropertyChanged;
@@ -117,18 +102,72 @@ public abstract partial class Signal
 
     protected static T GetValue<T>(IReadOnlySignal property, in T value)
     {
-        _signalsRequested.OnNext(property);
+        uint affinityValue;
+        lock (_computedSignalAffinityValue)
+        {
+            affinityValue = _computedSignalAffinityValue.Value;
+        }
+
+        if (_signalRequestedByComputedAffinity.TryGetValue(affinityValue, out var subject))
+        {
+            subject.OnNext(property);
+        }
 
         return value;
     }
 
-    public readonly struct UntrackedReleaserDisposable : IDisposable
+
+    public readonly struct SignalsRequestedObservable : IObservable<IReadOnlySignal>
     {
+        public IDisposable Subscribe(IObserver<IReadOnlySignal> observer)
+        {
+            lock (_computedSignalAffinityValue)
+            {
+                var affinityValue = _nextComputedSignalAffinityValue;
+
+                var currentValue = _nextComputedSignalAffinityValue;
+                _nextComputedSignalAffinityValue = currentValue == uint.MaxValue ? 0 : currentValue + 1;
+
+                _computedSignalAffinityValue.Value = affinityValue;
+                var subject = new Subject<IReadOnlySignal>();
+                _signalRequestedByComputedAffinity.TryAdd(affinityValue, subject);
+
+                subject.Subscribe(observer);
+                return new SignalsRequestedDisposable(affinityValue, subject);
+            }
+        }
+    }
+
+    readonly struct SignalsRequestedDisposable : IDisposable
+    {
+        readonly uint _affinityValue;
+        readonly Subject<IReadOnlySignal> _subject;
+
+        public SignalsRequestedDisposable(uint affinityValue, Subject<IReadOnlySignal> subject)
+        {
+            _affinityValue = affinityValue;
+            _subject = subject;
+        }
         public void Dispose()
         {
-            lock (_computedSignalAffinityIndex)
+            _signalRequestedByComputedAffinity.TryRemove(_affinityValue, out _);
+            _subject.Dispose();
+        }
+    }
+
+    public readonly struct UntrackedReleaserDisposable : IDisposable
+    {
+        readonly uint _oldValue;
+
+        public UntrackedReleaserDisposable(uint oldValue)
+        {
+            _oldValue = oldValue;
+        }
+        public void Dispose()
+        {
+            lock (_computedSignalAffinityValue)
             {
-                _computedSignalAffinityIndex.Value--;
+                _computedSignalAffinityValue.Value = _oldValue;
             }
         }
     }
