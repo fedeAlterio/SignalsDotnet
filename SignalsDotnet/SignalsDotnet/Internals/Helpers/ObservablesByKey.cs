@@ -4,7 +4,7 @@ using System.Reactive.Subjects;
 
 namespace SignalsDotnet.Internals.Helpers;
 
-class ObservablesByKey<TKey, TValue> where TKey : notnull
+internal class ObservablesByKey<TKey, TValue> where TKey : notnull
 {
     readonly ConcurrentDictionary<TKey, ISubject<TValue>> _eventHandlersByKey = new();
     readonly ConcurrentQueue<Func<IObservable<TValue>, IObservable<TValue>>> _mappers= new();

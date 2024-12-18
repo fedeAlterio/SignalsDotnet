@@ -9,10 +9,10 @@ namespace SignalsDotnet;
 public class CollectionSignal<T> : IReadOnlySignal<T?> where T : class, INotifyCollectionChanged
 {
     readonly CollectionChangedSignalConfigurationDelegate? _collectionChangedConfiguration;
-    readonly Signal<IReadOnlySignal<T>> _signal;
+    readonly Signal<IReadOnlySignal<T>?> _signal;
 
     public CollectionSignal(CollectionChangedSignalConfigurationDelegate? collectionChangedConfiguration = null,
-                            SignalConfigurationDelegate<IReadOnlySignal<T>>? propertyChangedConfiguration = null)
+                            SignalConfigurationDelegate<IReadOnlySignal<T>?>? propertyChangedConfiguration = null)
     {
         _collectionChangedConfiguration = collectionChangedConfiguration;
         _signal = new(propertyChangedConfiguration);
@@ -27,14 +27,14 @@ public class CollectionSignal<T> : IReadOnlySignal<T?> where T : class, INotifyC
     public T? Value
     {
         get => _signal.Value?.Value;
-        set => _signal.Value = value?.ToCollectionSignal(_collectionChangedConfiguration);
+        set => _signal.Value = value?.ToCollectionSignal(_collectionChangedConfiguration)!;
     }
 
     public IObservable<Unit> Changed => this.Select(static _ => Unit.Default);
 
     public IDisposable Subscribe(IObserver<T?> observer)
     {
-        return _signal.Select(static x => x ?? Observable.Empty<T>())
+        return _signal.Select(static x => x ?? Observable.Return(default(T?)))
                       .Switch()
                       .Subscribe(observer);
     }

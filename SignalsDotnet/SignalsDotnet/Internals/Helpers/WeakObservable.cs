@@ -1,8 +1,8 @@
 ﻿using System.Reflection;
 
-namespace SignalsDotnet;
+namespace SignalsDotnet.Internals.Helpers;
 
-static class WeakObservable
+internal static class WeakObservable
 {
     public static IDisposable SubscribeWeakly<T>(this IObservable<T> source, Action<T> onNext)
     {

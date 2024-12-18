@@ -6,7 +6,7 @@ using SignalsDotnet.Internals.Helpers;
 
 namespace SignalsDotnet.Internals;
 
-class FromObservableSignal<T> : Signal, IReadOnlySignal<T?>, IEquatable<FromObservableSignal<T?>>
+internal class FromObservableSignal<T> : Signal, IReadOnlySignal<T?>, IEquatable<FromObservableSignal<T?>>
 {
     readonly ReadonlySignalConfiguration<T?> _configuration;
     readonly Subject<Unit> _someoneAskedValueSubject = new();
@@ -65,7 +65,7 @@ class FromObservableSignal<T> : Signal, IReadOnlySignal<T?>, IEquatable<FromObse
         _someoneAskedValueSubject.Dispose();
     }
 
-    public IDisposable Subscribe(IObserver<T?> observer) => this.OnPropertyChanged(nameof(Value), () => Value)
+    public IDisposable Subscribe(IObserver<T?> observer) => this.OnPropertyChanged(false)
                                                                 .Subscribe(observer);
 
     public bool Equals(FromObservableSignal<T?>? other)
@@ -95,4 +95,16 @@ class FromObservableSignal<T> : Signal, IReadOnlySignal<T?>, IEquatable<FromObse
 
     public override int GetHashCode() => _value is null ? 0 : _configuration.Comparer.GetHashCode(_value);
     public IObservable<Unit> Changed => this.Select(static _ => Unit.Default);
+}
+
+internal class FromObservableAsyncSignal<T> : FromObservableSignal<T>, IAsyncReadOnlySignal<T>
+{
+    public FromObservableAsyncSignal(IObservable<T> observable,
+                                     IReadOnlySignal<bool> isExecuting,
+                                     ReadonlySignalConfigurationDelegate<T?>? configuration = null) : base(observable, configuration)
+    {
+        IsComputing = isExecuting;
+    }
+
+    public IReadOnlySignal<bool> IsComputing { get; }
 }
