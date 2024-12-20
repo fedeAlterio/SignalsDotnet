@@ -1,5 +1,6 @@
 ﻿using System.Collections.ObjectModel;
 using FluentAssertions;
+using R3;
 
 namespace SignalsDotnet.Tests;
 
@@ -10,7 +11,7 @@ public class CollectionSignalTests
     {
         var city = new City();
         bool anyNiceChair = false;
-        city.AnyNiceChair.Subscribe(x => anyNiceChair = x);
+        city.AnyNiceChair.Values.Subscribe(x => anyNiceChair = x);
 
         var house = new House();
         city.Houses.Value = [house];

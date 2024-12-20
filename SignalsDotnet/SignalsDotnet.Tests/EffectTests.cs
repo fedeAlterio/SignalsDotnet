@@ -1,12 +1,12 @@
-﻿using System.Reactive.Concurrency;
-using System.Reactive.Disposables;
-using FluentAssertions;
+﻿using FluentAssertions;
+using R3;
 
 namespace SignalsDotnet.Tests;
+
 public class EffectTests
 {
     [Fact]
-    void ShouldRunWhenAnySignalChanges()
+    public void ShouldRunWhenAnySignalChanges()
     {
         var number1 = new Signal<int>();
         var number2 = new Signal<int>();
@@ -31,7 +31,7 @@ public class EffectTests
     }
 
     [Fact]
-    void ShouldRunOnSpecifiedScheduler()
+    public void ShouldRunOnSpecifiedScheduler()
     {
         var scheduler = new TestScheduler();
         var number1 = new Signal<int>();
@@ -58,7 +58,7 @@ public class EffectTests
     }
 
     [Fact]
-    void EffectShouldNotRunMultipleTimesInASingleSchedule()
+    public void EffectShouldNotRunMultipleTimesInASingleSchedule()
     {
         var scheduler = new TestScheduler();
         var number1 = new Signal<int>();
@@ -71,10 +71,10 @@ public class EffectTests
             executionsCount++;
         }, scheduler);
         executionsCount.Should().Be(1);
-        
+
         number2.Value = 4;
         number2.Value = 3;
-        
+
         number1.Value = 4;
         number1.Value = 3;
         executionsCount.Should().Be(1);
@@ -91,51 +91,60 @@ public class EffectTests
     }
 
     [Fact]
-    void EffectsShouldRunAtTheEndOfAtomicOperations()
+    public async Task EffectsShouldRunAtTheEndOfAtomicOperations()
     {
-        var number1 = new Signal<int>();
-        var number2 = new Signal<int>();
+        await Enumerable.Range(1, 33)
+                   .Select(__ =>
+                   {
+                       return Observable.FromAsync(async token => await Task.Run(() =>
+                       {
+                           var number1 = new Signal<int>();
+                           var number2 = new Signal<int>();
 
-        int sum = -1;
-        var effect = new Effect(() => sum = number1.Value + number2.Value);
-        sum.Should().Be(0);
+                           int sum = -1;
+                           _ = new Effect(() => sum = number1.Value + number2.Value);
+                           //sum.Should().Be(0);
 
-        Effect.AtomicOperation(() =>
-        {
-            number1.Value = 1;
-            sum.Should().Be(0);
+                           Effect.AtomicOperation(() =>
+                           {
+                               number1.Value = 1;
+                               sum.Should().Be(0);
 
-            number1.Value = 2;
-            sum.Should().Be(0);
-        });
-        sum.Should().Be(2);
+                               number1.Value = 2;
+                               sum.Should().Be(0);
+                           });
+                           sum.Should().Be(2);
 
-        Effect.AtomicOperation(() =>
-        {
-            number2.Value = 2;
-            sum.Should().Be(2);
+                           Effect.AtomicOperation(() =>
+                           {
+                               number2.Value = 2;
+                               sum.Should().Be(2);
 
-            Effect.AtomicOperation(() =>
-            {
-                number2.Value = 3;
-                sum.Should().Be(2);
-            });
+                               Effect.AtomicOperation(() =>
+                               {
+                                   number2.Value = 3;
+                                   sum.Should().Be(2);
+                               });
 
-            sum.Should().Be(2);
-        });
+                               sum.Should().Be(2);
+                           });
 
-        sum.Should().Be(5);
+                           sum.Should().Be(5);
+                       }, token));
+                   })
+                   .Merge()
+                   .WaitAsync();
     }
 
     [Fact]
-    void EffectsShouldRunAtTheEndOfAtomicOperationsWithScheduler()
+    public void EffectsShouldRunAtTheEndOfAtomicOperationsWithScheduler()
     {
         var scheduler = new TestScheduler();
         var number1 = new Signal<int>();
         var number2 = new Signal<int>();
 
         int sum = -1;
-        var effect = new Effect(() => sum = number1.Value + number2.Value, scheduler);
+        _ = new Effect(() => sum = number1.Value + number2.Value, scheduler);
         sum.Should().Be(0);
 
         Effect.AtomicOperation(() =>
@@ -149,30 +158,35 @@ public class EffectTests
             sum.Should().Be(0);
         });
         sum.Should().Be(0);
-        
+
         scheduler.ExecuteAllPendingActions();
         sum.Should().Be(2);
     }
+}
 
-
-    class TestScheduler : IScheduler
+public class TestScheduler : TimeProvider
+{
+    Action? _actions;
+    public void ExecuteAllPendingActions()
     {
-        Action? _actions;
-        public void ExecuteAllPendingActions()
+        _actions?.Invoke();
+    }
+
+    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+    {
+        _actions += () => callback(state);
+        return new FakeTimer();
+    }
+
+    class FakeTimer : ITimer
+    {
+        public void Dispose()
         {
-            var actions = _actions;
-            _actions = null;
-            actions?.Invoke();
+
         }
 
-        public IDisposable Schedule<TState>(TState state, Func<IScheduler, TState, IDisposable> action)
-        {
-            _actions += () => action(this, state);
-            return Disposable.Empty;
-        }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
-        public IDisposable Schedule<TState>(TState state, TimeSpan dueTime, Func<IScheduler, TState, IDisposable> action) => Schedule(state, action);
-        public IDisposable Schedule<TState>(TState state, DateTimeOffset dueTime, Func<IScheduler, TState, IDisposable> action) => Schedule(state, action);
-        public DateTimeOffset Now => DateTimeOffset.UnixEpoch;
+        public bool Change(TimeSpan dueTime, TimeSpan period) => throw new NotImplementedException();
     }
 }

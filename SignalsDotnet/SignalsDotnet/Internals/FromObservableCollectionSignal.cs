@@ -1,13 +1,12 @@
 ﻿using System.Collections.Specialized;
-using System.Reactive;
-using System.Reactive.Linq;
-using System.Reactive.Subjects;
+using System.ComponentModel;
+using R3;
 using SignalsDotnet.Configuration;
 using SignalsDotnet.Internals.Helpers;
 
 namespace SignalsDotnet.Internals;
 
-class FromObservableCollectionSignal<T> : Signal, IReadOnlySignal<T> where T : INotifyCollectionChanged
+internal class FromObservableCollectionSignal<T> : IReadOnlySignal<T> where T : INotifyCollectionChanged
 {
     readonly Subject<Unit> _collectionChanged = new();
     
@@ -29,20 +28,22 @@ class FromObservableCollectionSignal<T> : Signal, IReadOnlySignal<T> where T : I
         {
             observable.Subscribe(OnCollectionChanged);
         }
-        
-        IObservable<Unit> collectionChanged = _collectionChanged;
-        collectionChanged = configuration.CollectionChangedObservableMapper.Invoke(collectionChanged);
-        Changed = collectionChanged.StartWith(Unit.Default);
     }
 
-    void OnCollectionChanged(EventPattern<NotifyCollectionChangedEventArgs> _) => _collectionChanged.OnNext(default);
+    void OnCollectionChanged((object? sender, NotifyCollectionChangedEventArgs e) _) => _collectionChanged.OnNext(default);
 
-    public IDisposable Subscribe(IObserver<T> observer) => Changed.Select(_ => Value)
-                                                                  .Subscribe(observer);
-    public IObservable<Unit> Changed { get; }
+    public Observable<T> Values => _collectionChanged.Select(_ => Value)
+                                                    .Prepend(() => Value);
+
+    public Observable<T> FutureValues => _collectionChanged.Select(_ => Value);
 
     readonly T _value;
-    public T Value => GetValue(this, in _value);
+    public T Value => Signal.GetValue(this, in _value);
+
     object IReadOnlySignal.UntrackedValue => UntrackedValue;
     public T UntrackedValue => _value;
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    Observable<Unit> IReadOnlySignal.Values => _collectionChanged.Prepend(Unit.Default);
+    Observable<Unit> IReadOnlySignal.FutureValues => _collectionChanged;
 }

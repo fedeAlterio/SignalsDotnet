@@ -1,5 +1,5 @@
-﻿using System.Reactive.Linq;
-using FluentAssertions;
+﻿using FluentAssertions;
+using R3;
 
 namespace SignalsDotnet.Tests;
 
@@ -14,7 +14,7 @@ public class ComputedSignalTests
         int Sum() => prop1.Value + prop2.Value;
         var computed = Signal.Computed(Sum);
         int notifiedValue = 0;
-        computed.Subscribe(_ => notifiedValue++);
+        computed.Values.Subscribe(_ => notifiedValue++);
         _ = computed.Value;
 
         notifiedValue = 0;
@@ -47,7 +47,7 @@ public class ComputedSignalTests
         var computed = Signal.Computed(Op);
         computed.Value.Should().Be(Op());
 
-        var computedChanged = computed.Skip(1);
+        var computedChanged = computed.Values.Skip(1);
         
         var notified = false;
         computedChanged.Subscribe(_ => notified = true);
@@ -81,7 +81,7 @@ public class ComputedSignalTests
 
         var value = 0;
         var computed = Signal.Computed(() => a.Value + Signal.Untracked(() => b.Value));
-        computed.Subscribe(x => value = x);
+        computed.Values.Subscribe(x => value = x);
         a.Value = 1;
         value.Should().Be(1);
         a.Value = 2;
@@ -101,7 +101,7 @@ public class ComputedSignalTests
 
         var value = 0;
         var computed = Signal.Computed(() => a.Value + b.UntrackedValue);
-        computed.Subscribe(x => value = x);
+        computed.Values.Subscribe(x => value = x);
         a.Value = 1;
         value.Should().Be(1);
         a.Value = 2;

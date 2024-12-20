@@ -1,6 +1,6 @@
 ﻿namespace SignalsDotnet.Internals.Helpers;
 
-class KeyEqualityComparer<T, TDestination> : IEqualityComparer<T> where TDestination : notnull
+internal class KeyEqualityComparer<T, TDestination> : IEqualityComparer<T> where TDestination : notnull
 {
     readonly Func<T?, TDestination> _keyExtractor;
     readonly EqualityComparer<TDestination> _equalityComparer = EqualityComparer<TDestination>.Default;

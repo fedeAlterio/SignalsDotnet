@@ -1,9 +1,6 @@
-﻿using System;
-using System.Reactive;
-using System.Reactive.Concurrency;
-using System.Reactive.Disposables;
-using System.Reactive.Linq;
+﻿using R3;
 using SignalsDotnet.Configuration;
+using SignalsDotnet.Helpers;
 using SignalsDotnet.Internals;
 using SignalsDotnet.Internals.Helpers;
 
@@ -13,87 +10,101 @@ public partial class Signal
 {
     public static IReadOnlySignal<T> Computed<T>(Func<T> func, Func<T> fallbackValue, ReadonlySignalConfigurationDelegate<T?>? configuration = null)
     {
-        if (func is null)
-            throw new ArgumentNullException(nameof(func));
-
-        if (fallbackValue is null)
-            throw new ArgumentNullException(nameof(fallbackValue));
-
-        return Computed(func, () => new Optional<T>(fallbackValue()), configuration);
+        return Computed(func.ToAsyncValueTask(), default, () => new Optional<T>(fallbackValue()), default, configuration);
     }
 
-    public static IReadOnlySignal<T?> Computed<T>(Func<T> func, ReadonlySignalConfigurationDelegate<T?>? configuration = null)
+    public static IReadOnlySignal<T> Computed<T>(Func<T> func, Func<Optional<T>> fallbackValue, ReadonlySignalConfigurationDelegate<T?>? configuration = null)
     {
-        if (func is null)
-            throw new ArgumentNullException(nameof(func));
+        return Computed(func.ToAsyncValueTask(), default, fallbackValue, default, configuration);
+    }
 
-        return Computed(func, static () => Optional<T>.Empty, configuration);
+    public static IReadOnlySignal<T> Computed<T>(Func<T> func, ReadonlySignalConfigurationDelegate<T?>? configuration = null)
+    {
+        return Computed(func.ToAsyncValueTask(), default, static () => Optional<T>.Empty, default, configuration);
     }
 
 
-    internal static IReadOnlySignal<T> Computed<T>(Func<T> func, Func<Optional<T>> fallbackValue, ReadonlySignalConfigurationDelegate<T?>? configuration)
+    public static IAsyncReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
+                                                      T startValue,
+                                                      Func<Optional<T>> fallbackValue,
+                                                      ConcurrentChangeStrategy concurrentChangeStrategy = default,
+                                                      ReadonlySignalConfigurationDelegate<T>? configuration = null)
     {
-        var valueObservable = ComputedObservable(func, fallbackValue, null);
-
-        return new FromObservableSignal<T>(valueObservable, configuration)!;
+        func = func.TraceWhenExecuting(out var isExecuting);
+        return AsyncComputed(func, new Optional<T>(startValue), fallbackValue, isExecuting, concurrentChangeStrategy, configuration!);
     }
 
-    internal static IObservable<T> ComputedObservable<T>(Func<T> func, Func<Optional<T>> fallbackValue, Func<Unit, IObservable<Unit>>? scheduler = null)
+    public static IAsyncReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
+                                                           T startValue,
+                                                           Func<T> fallbackValue,
+                                                           ConcurrentChangeStrategy concurrentChangeStrategy = default,
+                                                           ReadonlySignalConfigurationDelegate<T>? configuration = null)
     {
-        return Observable.Create<T>(observer =>
+        return AsyncComputed(func, startValue, () => new Optional<T>(fallbackValue()), concurrentChangeStrategy, configuration);
+    }
+
+    public static IAsyncReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
+                                                           T startValue,
+                                                           ConcurrentChangeStrategy concurrentChangeStrategy = default,
+                                                           ReadonlySignalConfigurationDelegate<T>? configuration = null)
+    {
+        return AsyncComputed(func, startValue, static () => Optional<T>.Empty, concurrentChangeStrategy, configuration);
+    }
+
+
+
+    public static Observable<T> ComputedObservable<T>(Func<T> func,
+                                                       Func<Optional<T>> fallbackValue)
+    {
+        return ComputedObservable(func.ToAsyncValueTask(), fallbackValue);
+    }
+
+
+    public static Observable<T> AsyncComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func,
+                                                            T startValue,
+                                                            Func<Optional<T>> fallbackValue,
+                                                            ConcurrentChangeStrategy concurrentChangeStrategy = default)
+    {
+        return ComputedObservable(func, fallbackValue, concurrentChangeStrategy: concurrentChangeStrategy).Prepend(startValue);
+    }
+
+
+    internal static IReadOnlySignal<T> Computed<T>(Func<CancellationToken, ValueTask<T>> func,
+                                                   Optional<T> startValueOptional,
+                                                   Func<Optional<T>> fallbackValue,
+                                                   ConcurrentChangeStrategy concurrentChangeStrategy,
+                                                   ReadonlySignalConfigurationDelegate<T?>? configuration)
+    {
+        var valueObservable = ComputedObservable(func, fallbackValue, null, concurrentChangeStrategy);
+        if (startValueOptional.TryGetValue(out var startValue))
         {
-            var disposable = new SerialDisposable();
-            OnNewResult(ComputeResult(func, fallbackValue, scheduler));
-            void OnNewResult(ComputationResult<T> result)
-            {
-                disposable.Disposable = result.NextResult
-                                              .Take(1)
-                                              .Subscribe(OnNewResult);
-
-                // We notify a new value only if the func() evaluation succeeds.
-                if (result.ResultOptional.TryGetValue(out var propertyValue))
-                    observer.OnNext(propertyValue);
-            }
-
-            return disposable;
-        });
-    }
-
-
-    static ComputationResult<T> ComputeResult<T>(Func<T> resultFunc, 
-                                                 Func<Optional<T>> fallbackValue, 
-                                                 Func<Unit, IObservable<Unit>>? scheduler)
-    {
-        var referenceEquality = ReferenceEqualityComparer.Instance;
-        HashSet<IReadOnlySignal> propertiesRequested = new(referenceEquality);
-        Optional<T> result;
-        using (PropertiesRequested(Thread.CurrentThread).Subscribe(x => propertiesRequested.Add(x)))
-        {
-            try
-            {
-                result = new(resultFunc());
-            }
-            catch
-            {
-                // If something fails, the property will have the previous result,
-                // We still have to observe for the properties to change (maybe next time the exception will not be thrown)
-                result = fallbackValue();
-            }
+            valueObservable = valueObservable.Prepend(startValue);
         }
 
-
-        var observable = WhenAnyChanged(propertiesRequested).Skip(1); // We want to observe only future changes
-
-        if (scheduler is not null)
-        {
-            observable = observable.Select(scheduler)
-                                   .Switch();
-        }
-
-        var restulObsrvable = observable.Select(_ => ComputeResult(resultFunc, fallbackValue, scheduler));
-
-        return new(restulObsrvable, result);
+        return new FromObservableSignal<T>(valueObservable, configuration);
     }
 
-    record struct ComputationResult<T>(IObservable<ComputationResult<T>> NextResult, Optional<T> ResultOptional);
+    internal static IAsyncReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
+                                                             Optional<T> startValueOptional,
+                                                             Func<Optional<T>> fallbackValue,
+                                                             IReadOnlySignal<bool> isExecuting,
+                                                             ConcurrentChangeStrategy concurrentChangeStrategy,
+                                                             ReadonlySignalConfigurationDelegate<T?>? configuration)
+    {
+        var valueObservable = ComputedObservable(func, fallbackValue, null, concurrentChangeStrategy);
+        if (startValueOptional.TryGetValue(out var startValue))
+        {
+            valueObservable = valueObservable.Prepend(startValue);
+        }
+
+        return new FromObservableAsyncSignal<T>(valueObservable, isExecuting, configuration);
+    }
+
+    internal static Observable<T> ComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func,
+                                                        Func<Optional<T>> fallbackValue,
+                                                        Func<Unit, Observable<Unit>>? scheduler = null,
+                                                        ConcurrentChangeStrategy concurrentChangeStrategy = default)
+    {
+        return new ComputedObservable<T>(func, fallbackValue, scheduler, concurrentChangeStrategy);
+    }
 }

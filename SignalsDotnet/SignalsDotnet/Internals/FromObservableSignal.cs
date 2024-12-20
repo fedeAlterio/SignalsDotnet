@@ -1,18 +1,19 @@
-﻿using System.Reactive;
-using System.Reactive.Linq;
-using System.Reactive.Subjects;
+﻿using System.ComponentModel;
+using R3;
 using SignalsDotnet.Configuration;
 using SignalsDotnet.Internals.Helpers;
 
 namespace SignalsDotnet.Internals;
 
-class FromObservableSignal<T> : Signal, IReadOnlySignal<T?>, IEquatable<FromObservableSignal<T?>>
+internal class FromObservableSignal<T> : IReadOnlySignal<T>, IEquatable<FromObservableSignal<T?>>
 {
     readonly ReadonlySignalConfiguration<T?> _configuration;
-    readonly Subject<Unit> _someoneAskedValueSubject = new();
+    readonly Subject<Unit> _someoneAskedValueSubject = new(); // lock
     int _someoneAskedValue; // 1 means true, 0 means false
 
-    public FromObservableSignal(IObservable<T> observable, 
+#pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
+    public FromObservableSignal(Observable<T> observable,
+#pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
                                 ReadonlySignalConfigurationDelegate<T?>? configuration = null)
     {
         if (observable is null)
@@ -38,20 +39,40 @@ class FromObservableSignal<T> : Signal, IReadOnlySignal<T?>, IEquatable<FromObse
     /// <summary>
     /// Dont inline this function with a lambda
     /// </summary>
-    void SetValue(T value) => Value = value;
+    void SetValue(T value)
+    {
+        Value = value;
+    }
 
-
-    T? _value;
-    public T? Value
+    T _value;
+    public T Value
     {
         get
         {
             NotifySomeoneAskedAValue();
-            return GetValue(this, in _value);
+            return Signal.GetValue(this, in _value);
         }
-        set => SetValue(ref _value, value, _configuration.Comparer, _configuration.RaiseOnlyWhenChanged);
+        private set
+        {
+            if (EqualityComparer<T>.Default.Equals(_value, value))
+                return;
+
+            _value = value;
+
+            var propertyChanged = PropertyChanged;
+            if (propertyChanged is null)
+            {
+                return;
+            }
+
+            using (Signal.UntrackedScope())
+            {
+                propertyChanged(this, Signal.PropertyChangedArgs);
+            }
+        }
     }
-    public T? UntrackedValue => _value;
+
+    public T UntrackedValue => _value;
     object? IReadOnlySignal.UntrackedValue => UntrackedValue;
 
     void NotifySomeoneAskedAValue()
@@ -65,8 +86,8 @@ class FromObservableSignal<T> : Signal, IReadOnlySignal<T?>, IEquatable<FromObse
         _someoneAskedValueSubject.Dispose();
     }
 
-    public IDisposable Subscribe(IObserver<T?> observer) => this.OnPropertyChanged(nameof(Value), () => Value)
-                                                                .Subscribe(observer);
+    public Observable<T> Values => this.OnPropertyChanged(false);
+    public Observable<T> FutureValues => this.OnPropertyChanged(true);
 
     public bool Equals(FromObservableSignal<T?>? other)
     {
@@ -94,5 +115,20 @@ class FromObservableSignal<T> : Signal, IReadOnlySignal<T?>, IEquatable<FromObse
     public static bool operator !=(FromObservableSignal<T> a, FromObservableSignal<T> b) => !(a == b);
 
     public override int GetHashCode() => _value is null ? 0 : _configuration.Comparer.GetHashCode(_value);
-    public IObservable<Unit> Changed => this.Select(static _ => Unit.Default);
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    Observable<Unit> IReadOnlySignal.Values => this.OnPropertyChangedAsUnit(false);
+    Observable<Unit> IReadOnlySignal.FutureValues => this.OnPropertyChangedAsUnit(true);
+}
+
+internal class FromObservableAsyncSignal<T> : FromObservableSignal<T>, IAsyncReadOnlySignal<T>
+{
+    public FromObservableAsyncSignal(Observable<T> observable,
+                                     IReadOnlySignal<bool> isExecuting,
+                                     ReadonlySignalConfigurationDelegate<T?>? configuration = null) : base(observable, configuration)
+    {
+        IsComputing = isExecuting;
+    }
+
+    public IReadOnlySignal<bool> IsComputing { get; }
 }

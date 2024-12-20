@@ -1,18 +1,26 @@
 ﻿using System.ComponentModel;
-using System.Reactive;
+using R3;
 
 namespace SignalsDotnet;
 
 public interface IReadOnlySignal : INotifyPropertyChanged
 {
-    IObservable<Unit> Changed { get; }
+    Observable<Unit> Values { get; }
+    Observable<Unit> FutureValues => Values.Skip(1);
     object? Value { get; }
     object? UntrackedValue { get; }
 }
 
-public interface IReadOnlySignal<out T> : IObservable<T>, IReadOnlySignal
+public interface IReadOnlySignal<T> : IReadOnlySignal
 {
+    new Observable<T> Values { get; }
+    new Observable<T> FutureValues { get; }
     new T Value { get; }
     new T UntrackedValue { get; }
     object? IReadOnlySignal.Value => Value;
+}
+
+public interface IAsyncReadOnlySignal<T> : IReadOnlySignal<T>
+{
+    IReadOnlySignal<bool> IsComputing { get; }
 }
