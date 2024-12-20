@@ -3,7 +3,7 @@
 
 # Nuget https://www.nuget.org/packages/SignalsDotnet
 
-    # Angular Signals for .Net
+# Angular Signals for .Net
 This library is a porting of the Angular Signals in the .Net World, adapted to the .Net MVVM UI Frameworks and based on [R3](https://github.com/Cysharp/R3) (variant of ReactiveX).
 If you need an introduction to what a signal is, try to see: https://angular.io/guide/signals.
 
