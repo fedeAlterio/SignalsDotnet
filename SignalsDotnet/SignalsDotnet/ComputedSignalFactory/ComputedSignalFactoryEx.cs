@@ -1,4 +1,5 @@
-﻿using SignalsDotnet.Configuration;
+﻿using R3;
+using SignalsDotnet.Configuration;
 using SignalsDotnet.Helpers;
 using SignalsDotnet.Internals.ComputedSignalrFactory;
 
@@ -6,7 +7,7 @@ namespace SignalsDotnet;
 
 public static class ComputedSignalFactoryEx
 {
-    public static IComputedSignalFactory DisconnectEverythingWhen(this IComputedSignalFactory @this, IObservable<bool> shouldBeCancelled)
+    public static IComputedSignalFactory DisconnectEverythingWhen(this IComputedSignalFactory @this, Observable<bool> shouldBeCancelled)
     {
         return new CancelComputedSignalFactoryDecorator(@this, CancellationSignal.Create(shouldBeCancelled));
     }

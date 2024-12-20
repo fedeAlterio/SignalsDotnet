@@ -1,4 +1,4 @@
-﻿using System.Reactive.Disposables;
+﻿using R3;
 
 namespace SignalsDotnet.Internals.Helpers;
 
@@ -9,7 +9,7 @@ internal static class ObservableEx
         return new FromAsyncContextObservable<T>(asyncAction);
     }
 
-    public readonly struct FromAsyncContextObservable<T> : IObservable<T>
+    public class FromAsyncContextObservable<T> : Observable<T>
     {
         readonly Func<CancellationToken, ValueTask<T>> _asyncAction;
 
@@ -18,7 +18,7 @@ internal static class ObservableEx
             _asyncAction = asyncAction;
         }
 
-        public IDisposable Subscribe(IObserver<T> observer)
+        protected override IDisposable SubscribeCore(Observer<T> observer)
         {
             var disposable = new CancellationDisposable();
             var token = disposable.Token;
@@ -37,13 +37,13 @@ internal static class ObservableEx
             }
             catch (Exception e)
             {
-                observer.OnError(e);
+                observer.OnCompleted(e);
             }
 
             return disposable;
         }
 
-        static async void BindObserverToTask(ValueTask<T> task, IObserver<T> observer)
+        static async void BindObserverToTask(ValueTask<T> task, Observer<T> observer)
         {
             try
             {
@@ -55,7 +55,7 @@ internal static class ObservableEx
             {
                 try
                 {
-                    observer.OnError(e);
+                    observer.OnCompleted(e);
                 }
                 catch
                 {

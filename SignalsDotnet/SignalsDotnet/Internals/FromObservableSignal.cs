@@ -1,18 +1,17 @@
-﻿using System.Reactive;
-using System.Reactive.Linq;
-using System.Reactive.Subjects;
+﻿using System.ComponentModel;
+using R3;
 using SignalsDotnet.Configuration;
 using SignalsDotnet.Internals.Helpers;
 
 namespace SignalsDotnet.Internals;
 
-internal class FromObservableSignal<T> : Signal, IReadOnlySignal<T?>, IEquatable<FromObservableSignal<T?>>
+internal class FromObservableSignal<T> : Observable<T>, IReadOnlySignal<T?>, IEquatable<FromObservableSignal<T?>>
 {
     readonly ReadonlySignalConfiguration<T?> _configuration;
-    readonly Subject<Unit> _someoneAskedValueSubject = new();
+    readonly Subject<Unit> _someoneAskedValueSubject = new(); // lock
     int _someoneAskedValue; // 1 means true, 0 means false
 
-    public FromObservableSignal(IObservable<T> observable, 
+    public FromObservableSignal(Observable<T> observable,
                                 ReadonlySignalConfigurationDelegate<T?>? configuration = null)
     {
         if (observable is null)
@@ -38,8 +37,10 @@ internal class FromObservableSignal<T> : Signal, IReadOnlySignal<T?>, IEquatable
     /// <summary>
     /// Dont inline this function with a lambda
     /// </summary>
-    void SetValue(T value) => Value = value;
-
+    void SetValue(T value)
+    {
+        Value = value;
+    }
 
     T? _value;
     public T? Value
@@ -47,10 +48,28 @@ internal class FromObservableSignal<T> : Signal, IReadOnlySignal<T?>, IEquatable
         get
         {
             NotifySomeoneAskedAValue();
-            return GetValue(this, in _value);
+            return Signal.GetValue(this, in _value);
         }
-        set => SetValue(ref _value, value, _configuration.Comparer, _configuration.RaiseOnlyWhenChanged);
+        private set
+        {
+            if (EqualityComparer<T>.Default.Equals(_value, value))
+                return;
+
+            _value = value;
+
+            var propertyChanged = PropertyChanged;
+            if (propertyChanged is null)
+            {
+                return;
+            }
+
+            using (Signal.UntrackedScope())
+            {
+                propertyChanged(this, Signal.PropertyChangedArgs);
+            }
+        }
     }
+
     public T? UntrackedValue => _value;
     object? IReadOnlySignal.UntrackedValue => UntrackedValue;
 
@@ -65,8 +84,8 @@ internal class FromObservableSignal<T> : Signal, IReadOnlySignal<T?>, IEquatable
         _someoneAskedValueSubject.Dispose();
     }
 
-    public IDisposable Subscribe(IObserver<T?> observer) => this.OnPropertyChanged(false)
-                                                                .Subscribe(observer);
+    protected override IDisposable SubscribeCore(Observer<T> observer) => this.OnPropertyChanged(false)
+                                                                               .Subscribe(observer.OnNext!, observer.OnErrorResume, observer.OnCompleted);
 
     public bool Equals(FromObservableSignal<T?>? other)
     {
@@ -94,12 +113,13 @@ internal class FromObservableSignal<T> : Signal, IReadOnlySignal<T?>, IEquatable
     public static bool operator !=(FromObservableSignal<T> a, FromObservableSignal<T> b) => !(a == b);
 
     public override int GetHashCode() => _value is null ? 0 : _configuration.Comparer.GetHashCode(_value);
-    public IObservable<Unit> Changed => this.Select(static _ => Unit.Default);
+    public Observable<Unit> ValuesUnit => this.Select(static _ => Unit.Default);
+    public event PropertyChangedEventHandler? PropertyChanged;
 }
 
 internal class FromObservableAsyncSignal<T> : FromObservableSignal<T>, IAsyncReadOnlySignal<T>
 {
-    public FromObservableAsyncSignal(IObservable<T> observable,
+    public FromObservableAsyncSignal(Observable<T> observable,
                                      IReadOnlySignal<bool> isExecuting,
                                      ReadonlySignalConfigurationDelegate<T?>? configuration = null) : base(observable, configuration)
     {

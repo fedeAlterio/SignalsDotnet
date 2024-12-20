@@ -86,10 +86,11 @@ public class AsyncEffectTests
         {
             await Task.Yield();
             sum = number1.Value + number2.Value;
-            await Task.Yield();
         });
+
         await TestHelpers.WaitUntil(() => sum == 0);
 
+        await Task.Delay(10);
         await Effect.AtomicOperationAsync(async () =>
         {
             await Task.Yield();

@@ -1,17 +1,17 @@
 ﻿using System.Collections.Concurrent;
 using System.ComponentModel;
-using System.Reactive.Subjects;
-using System.Runtime.CompilerServices;
+using R3;
 
 namespace SignalsDotnet;
 
-public abstract partial class Signal
+public static partial class Signal
 {
     static uint _nextComputedSignalAffinityValue;
     static readonly AsyncLocal<uint> _computedSignalAffinityValue = new();
     static readonly ConcurrentDictionary<uint, Subject<IReadOnlySignal>> _signalRequestedByComputedAffinity = new();
+    internal static readonly PropertyChangedEventArgs PropertyChangedArgs = new("Value");
 
-    internal static SignalsRequestedObservable SignalsRequested()
+    internal static Observable<IReadOnlySignal> SignalsRequested()
     {
         return new SignalsRequestedObservable();
     }
@@ -74,33 +74,7 @@ public abstract partial class Signal
         }
     }
 
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    protected void SetValue<T>(ref T field,
-                               T value,
-                               IEqualityComparer<T> equalityComparer,
-                               bool raiseOnlyWhenChanged,
-                               [CallerMemberName] string? propertyName = null)
-    {
-        if (raiseOnlyWhenChanged && equalityComparer.Equals(field, value))
-            return;
-
-        field = value;
-
-        var propertyChanged = PropertyChanged;
-        if (propertyChanged is null)
-        {
-            return;
-        }
-
-        using (UntrackedScope())
-        {
-            propertyChanged(this, new PropertyChangedEventArgs(propertyName));
-        }
-    }
-
-
-    protected static T GetValue<T>(IReadOnlySignal property, in T value)
+    internal static T GetValue<T>(IReadOnlySignal property, in T value)
     {
         uint affinityValue;
         lock (_computedSignalAffinityValue)
@@ -116,10 +90,9 @@ public abstract partial class Signal
         return value;
     }
 
-
-    public readonly struct SignalsRequestedObservable : IObservable<IReadOnlySignal>
+    public class SignalsRequestedObservable : Observable<IReadOnlySignal>
     {
-        public IDisposable Subscribe(IObserver<IReadOnlySignal> observer)
+        protected override IDisposable SubscribeCore(Observer<IReadOnlySignal> observer)
         {
             lock (_computedSignalAffinityValue)
             {
@@ -132,7 +105,7 @@ public abstract partial class Signal
                 var subject = new Subject<IReadOnlySignal>();
                 _signalRequestedByComputedAffinity.TryAdd(affinityValue, subject);
 
-                subject.Subscribe(observer);
+                subject.Subscribe(observer.OnNext, observer.OnErrorResume, observer.OnCompleted);
                 return new SignalsRequestedDisposable(affinityValue, subject);
             }
         }

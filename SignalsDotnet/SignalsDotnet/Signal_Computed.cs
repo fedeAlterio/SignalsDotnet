@@ -1,5 +1,4 @@
-﻿using System.Reactive;
-using System.Reactive.Linq;
+﻿using R3;
 using SignalsDotnet.Configuration;
 using SignalsDotnet.Helpers;
 using SignalsDotnet.Internals;
@@ -54,19 +53,19 @@ public partial class Signal
 
 
 
-    public static IObservable<T> ComputedObservable<T>(Func<T> func,
+    public static Observable<T> ComputedObservable<T>(Func<T> func,
                                                        Func<Optional<T>> fallbackValue)
     {
         return ComputedObservable(func.ToAsyncValueTask(), fallbackValue);
     }
 
 
-    public static IObservable<T> AsyncComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func,
+    public static Observable<T> AsyncComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func,
                                                             T startValue,
                                                             Func<Optional<T>> fallbackValue,
                                                             ConcurrentChangeStrategy concurrentChangeStrategy = default)
     {
-        return ComputedObservable(func, fallbackValue, concurrentChangeStrategy: concurrentChangeStrategy).StartWith(startValue);
+        return ComputedObservable(func, fallbackValue, concurrentChangeStrategy: concurrentChangeStrategy).Prepend(startValue);
     }
 
 
@@ -79,7 +78,7 @@ public partial class Signal
         var valueObservable = ComputedObservable(func, fallbackValue, null, concurrentChangeStrategy);
         if (startValueOptional.TryGetValue(out var startValue))
         {
-            valueObservable = valueObservable.StartWith(startValue);
+            valueObservable = valueObservable.Prepend(startValue);
         }
 
         return new FromObservableSignal<T>(valueObservable, configuration)!;
@@ -95,16 +94,16 @@ public partial class Signal
         var valueObservable = ComputedObservable(func, fallbackValue, null, concurrentChangeStrategy);
         if (startValueOptional.TryGetValue(out var startValue))
         {
-            valueObservable = valueObservable.StartWith(startValue);
+            valueObservable = valueObservable.Prepend(startValue);
         }
 
         return new FromObservableAsyncSignal<T>(valueObservable, isExecuting, configuration);
     }
 
-    internal static IObservable<T> ComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func,
-                                                         Func<Optional<T>> fallbackValue,
-                                                         Func<Unit, IObservable<Unit>>? scheduler = null,
-                                                         ConcurrentChangeStrategy concurrentChangeStrategy = default)
+    internal static Observable<T> ComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func,
+                                                        Func<Optional<T>> fallbackValue,
+                                                        Func<Unit, Observable<Unit>>? scheduler = null,
+                                                        ConcurrentChangeStrategy concurrentChangeStrategy = default)
     {
         return new ComputedObservable<T>(func, fallbackValue, scheduler, concurrentChangeStrategy);
     }

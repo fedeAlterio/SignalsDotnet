@@ -1,8 +1,5 @@
-﻿using System.Reactive.Concurrency;
-using System.Reactive.Disposables;
-using System.Reactive.Linq;
-using System.Reactive.Threading.Tasks;
-using FluentAssertions;
+﻿using FluentAssertions;
+using R3;
 
 namespace SignalsDotnet.Tests;
 
@@ -94,45 +91,49 @@ public class EffectTests
     }
 
     [Fact]
-    public void EffectsShouldRunAtTheEndOfAtomicOperations()
+    public async Task EffectsShouldRunAtTheEndOfAtomicOperations()
     {
-        Enumerable.Range(1,33)
-                  .Select(__ => Observable.FromAsync(() => Task.Run(() =>
-        {
-            var number1 = new Signal<int>();
-            var number2 = new Signal<int>();
+        await Enumerable.Range(1, 33)
+                   .Select(__ =>
+                   {
+                       return Observable.FromAsync(async token => await Task.Run(() =>
+                       {
+                           var number1 = new Signal<int>();
+                           var number2 = new Signal<int>();
 
-            int sum = -1;
-            _ = new Effect(() => sum = number1.Value + number2.Value);
-            //sum.Should().Be(0);
+                           int sum = -1;
+                           _ = new Effect(() => sum = number1.Value + number2.Value);
+                           //sum.Should().Be(0);
 
-            Effect.AtomicOperation(() =>
-            {
-                number1.Value = 1;
-                sum.Should().Be(0);
+                           Effect.AtomicOperation(() =>
+                           {
+                               number1.Value = 1;
+                               sum.Should().Be(0);
 
-                number1.Value = 2;
-                sum.Should().Be(0);
-            });
-            sum.Should().Be(2);
+                               number1.Value = 2;
+                               sum.Should().Be(0);
+                           });
+                           sum.Should().Be(2);
 
-            Effect.AtomicOperation(() =>
-            {
-                number2.Value = 2;
-                sum.Should().Be(2);
+                           Effect.AtomicOperation(() =>
+                           {
+                               number2.Value = 2;
+                               sum.Should().Be(2);
 
-                Effect.AtomicOperation(() =>
-                {
-                    number2.Value = 3;
-                    sum.Should().Be(2);
-                });
+                               Effect.AtomicOperation(() =>
+                               {
+                                   number2.Value = 3;
+                                   sum.Should().Be(2);
+                               });
 
-                sum.Should().Be(2);
-            });
+                               sum.Should().Be(2);
+                           });
 
-            sum.Should().Be(5);
-        }))).Merge().ToTask().Wait();
-
+                           sum.Should().Be(5);
+                       }, token));
+                   })
+                   .Merge()
+                   .WaitAsync();
     }
 
     [Fact]
@@ -163,23 +164,29 @@ public class EffectTests
     }
 }
 
-public class TestScheduler : IScheduler
+public class TestScheduler : TimeProvider
 {
     Action? _actions;
     public void ExecuteAllPendingActions()
     {
-        var actions = _actions;
-        _actions = null;
-        actions?.Invoke();
+        _actions?.Invoke();
     }
 
-    public IDisposable Schedule<TState>(TState state, Func<IScheduler, TState, IDisposable> action)
+    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
     {
-        _actions += () => action(this, state);
-        return Disposable.Empty;
+        _actions += () => callback(state);
+        return new FakeTimer();
     }
 
-    public IDisposable Schedule<TState>(TState state, TimeSpan dueTime, Func<IScheduler, TState, IDisposable> action) => Schedule(state, action);
-    public IDisposable Schedule<TState>(TState state, DateTimeOffset dueTime, Func<IScheduler, TState, IDisposable> action) => Schedule(state, action);
-    public DateTimeOffset Now => DateTimeOffset.UnixEpoch;
+    class FakeTimer : ITimer
+    {
+        public void Dispose()
+        {
+
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        public bool Change(TimeSpan dueTime, TimeSpan period) => throw new NotImplementedException();
+    }
 }

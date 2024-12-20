@@ -1,10 +1,10 @@
-﻿using System.Reactive.Linq;
+﻿using R3;
 
 namespace SignalsDotnet;
 
 public static class CancellationSignal
 {
-    public static IReadOnlySignal<CancellationToken> Create(IObservable<bool> isCancelledObservable)
+    public static IReadOnlySignal<CancellationToken> Create(Observable<bool> isCancelledObservable)
     {
         return isCancelledObservable.DistinctUntilChanged()
                                     .Scan((cancelationTokenSource: (CancellationTokenSource?)null, cancellationToken: default(CancellationToken)), (x, isCancelled) =>

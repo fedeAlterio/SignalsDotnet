@@ -1,7 +1,4 @@
-﻿using System.Reactive;
-using System.Reactive.Concurrency;
-using System.Reactive.Linq;
-using System.Reactive.Subjects;
+﻿using R3;
 using SignalsDotnet.Helpers;
 
 namespace SignalsDotnet;
@@ -12,7 +9,7 @@ public class Effect : IDisposable
     static readonly AsyncLocal<BehaviorSubject<int>> _atomicOperationsCounter = new();
     readonly IDisposable _subscription;
 
-    public Effect(Action onChange, IScheduler? scheduler = null)
+    public Effect(Action onChange, TimeProvider? scheduler = null)
     {
         var computationDelayer = ComputationDelayer(scheduler ?? DefaultScheduler);
         _subscription = Signal.ComputedObservable(_ =>
@@ -23,7 +20,7 @@ public class Effect : IDisposable
                               .Subscribe();
     }
 
-    public Effect(Func<CancellationToken, ValueTask> onChange, ConcurrentChangeStrategy concurrentChangeStrategy = default,  IScheduler? scheduler = null)
+    public Effect(Func<CancellationToken, ValueTask> onChange, ConcurrentChangeStrategy concurrentChangeStrategy = default,  TimeProvider? scheduler = null)
     {
         var computationDelayer = ComputationDelayer(scheduler ?? DefaultScheduler);
         _subscription = Signal.ComputedObservable(async token =>
@@ -34,7 +31,7 @@ public class Effect : IDisposable
                               .Subscribe();
     }
 
-    static Func<Unit, IObservable<Unit>> ComputationDelayer(IScheduler? scheduler)
+    static Func<Unit, Observable<Unit>> ComputationDelayer(TimeProvider? scheduler)
     {
         var atomicOperations = Observable.Defer(() =>
         {
@@ -44,7 +41,8 @@ public class Effect : IDisposable
             }
         });
 
-        var noAtomicOperations = atomicOperations.Where(counter => counter == 0)
+        var noAtomicOperations = atomicOperations.Synchronize(_atomicOperationsCounter)
+                                                 .Where(counter => counter == 0)
                                                  .Select(static _ => Unit.Default);
 
         return scheduler is null
@@ -94,6 +92,6 @@ public class Effect : IDisposable
         }
     }
 
-    public static IScheduler? DefaultScheduler { get; set; }
+    public static TimeProvider? DefaultScheduler { get; set; }
     public void Dispose() => _subscription.Dispose();
 }

@@ -1,4 +1,4 @@
-﻿using System.Reactive.Concurrency;
+﻿using R3;
 using SignalsDotnet.Configuration;
 using SignalsDotnet.Helpers;
 using SignalsDotnet.Internals.Helpers;
@@ -24,7 +24,7 @@ internal class OnErrorComputedSignalFactoryDecorator : IComputedSignalFactory
         return ComputedObservable(func, fallbackValue).ToSignal(configuration!)!;
     }
 
-    public IObservable<T> ComputedObservable<T>(Func<T> func, Func<Optional<T>> fallbackValue)
+    public Observable<T> ComputedObservable<T>(Func<T> func, Func<Optional<T>> fallbackValue)
     {
         return _parent.ComputedObservable(() =>
         {
@@ -46,7 +46,7 @@ internal class OnErrorComputedSignalFactoryDecorator : IComputedSignalFactory
         return AsyncComputedObservable(func, startValue, fallbackValue, concurrentChangeStrategy).ToAsyncSignal(isExecuting, configuration!)!;
     }
 
-    public IObservable<T> AsyncComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func, T startValue, Func<Optional<T>> fallbackValue, ConcurrentChangeStrategy concurrentChangeStrategy = default)
+    public Observable<T> AsyncComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func, T startValue, Func<Optional<T>> fallbackValue, ConcurrentChangeStrategy concurrentChangeStrategy = default)
     {
         return _parent.AsyncComputedObservable(async token =>
         {
@@ -62,7 +62,7 @@ internal class OnErrorComputedSignalFactoryDecorator : IComputedSignalFactory
         }, startValue, fallbackValue, concurrentChangeStrategy);
     }
 
-    public Effect Effect(Action onChange, IScheduler? scheduler = null)
+    public Effect Effect(Action onChange, TimeProvider? scheduler = null)
     {
         return _parent.Effect(() =>
         {
@@ -78,7 +78,7 @@ internal class OnErrorComputedSignalFactoryDecorator : IComputedSignalFactory
         }, scheduler);
     }
 
-    public Effect AsyncEffect(Func<CancellationToken, ValueTask> onChange, ConcurrentChangeStrategy concurrentChangeStrategy = default, IScheduler? scheduler = null)
+    public Effect AsyncEffect(Func<CancellationToken, ValueTask> onChange, ConcurrentChangeStrategy concurrentChangeStrategy = default, TimeProvider? scheduler = null)
     {
         return _parent.AsyncEffect(async token =>
         {

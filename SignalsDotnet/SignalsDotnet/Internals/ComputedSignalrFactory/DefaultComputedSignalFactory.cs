@@ -1,4 +1,4 @@
-﻿using System.Reactive.Concurrency;
+﻿using R3;
 using SignalsDotnet.Configuration;
 using SignalsDotnet.Helpers;
 
@@ -21,23 +21,23 @@ internal class DefaultComputedSignalFactory : IComputedSignalFactory
     }
 
 
-    public IObservable<T> ComputedObservable<T>(Func<T> func, Func<Optional<T>> fallbackValue)
+    public Observable<T> ComputedObservable<T>(Func<T> func, Func<Optional<T>> fallbackValue)
     {
         return Signal.ComputedObservable(func, fallbackValue);
     }
 
-    public IObservable<T> AsyncComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func, T startValue, Func<Optional<T>> fallbackValue, ConcurrentChangeStrategy concurrentChangeStrategy = default)
+    public Observable<T> AsyncComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func, T startValue, Func<Optional<T>> fallbackValue, ConcurrentChangeStrategy concurrentChangeStrategy = default)
     {
         return Signal.AsyncComputedObservable(func, startValue, fallbackValue, concurrentChangeStrategy);
     }
 
 
-    public Effect Effect(Action onChange, IScheduler? scheduler)
+    public Effect Effect(Action onChange, TimeProvider? scheduler)
     {
         return new Effect(onChange, scheduler);
     }
 
-    public Effect AsyncEffect(Func<CancellationToken, ValueTask> onChange, ConcurrentChangeStrategy concurrentChangeStrategy, IScheduler? scheduler)
+    public Effect AsyncEffect(Func<CancellationToken, ValueTask> onChange, ConcurrentChangeStrategy concurrentChangeStrategy, TimeProvider? scheduler)
     {
         return new Effect(onChange, concurrentChangeStrategy, scheduler);
     }

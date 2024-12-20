@@ -1,21 +1,18 @@
 ﻿using SignalsDotnet.Helpers;
-using System.Reactive.Disposables;
-using System.Reactive.Linq;
-using System.Reactive;
-using ObservableEx = SignalsDotnet.Internals.Helpers.ObservableEx;
+using R3;
 
 namespace SignalsDotnet.Internals;
 
-internal class ComputedObservable<T> : IObservable<T>
+internal class ComputedObservable<T> : Observable<T>
 {
     readonly Func<CancellationToken, ValueTask<T>> _func;
     readonly Func<Optional<T>> _fallbackValue;
-    readonly Func<Unit, IObservable<Unit>>? _scheduler;
+    readonly Func<Unit, Observable<Unit>>? _scheduler;
     readonly ConcurrentChangeStrategy _concurrentChangeStrategy;
 
     public ComputedObservable(Func<CancellationToken, ValueTask<T>> func,
                               Func<Optional<T>> fallbackValue,
-                              Func<Unit, IObservable<Unit>>? scheduler = null,
+                              Func<Unit, Observable<Unit>>? scheduler = null,
                               ConcurrentChangeStrategy concurrentChangeStrategy = default)
     {
         _func = func;
@@ -24,35 +21,38 @@ internal class ComputedObservable<T> : IObservable<T>
         _concurrentChangeStrategy = concurrentChangeStrategy;
     }
 
-    public IDisposable Subscribe(IObserver<T> observer) => new Subscription(this, observer);
+    protected override IDisposable SubscribeCore(Observer<T> observer) => new Subscription(this, observer);
 
     class Subscription : IDisposable
     {
         readonly ComputedObservable<T> _observable;
-        readonly IObserver<T> _observer;
-        readonly MultipleAssignmentDisposable _disposable = new();
+        readonly Observer<T> _observer;
+        readonly BehaviorSubject<bool> _disposed = new(false);
 
-        public Subscription(ComputedObservable<T> observable, IObserver<T> observer)
+        public Subscription(ComputedObservable<T> observable, Observer<T> observer)
         {
             _observable = observable;
             _observer = observer;
-            _disposable.Disposable = ObservableEx.FromAsyncUsingAsyncContext(ComputeResult)
-                                                 .Take(1)
-                                                 .Subscribe(OnNewResult);
+            Observable.FromAsync(ComputeResult)
+                        .Take(1)
+                        .TakeUntil(_disposed.Where(x => x))
+                        .Subscribe(OnNewResult);
         }
 
         void OnNewResult(ComputationResult result)
         {
             var valueNotified = false;
 
-            _disposable.Disposable = result.ShouldComputeNextResult
-                                           .Take(1)
-                                           .SelectMany(_ =>
-                                           {
-                                               NotifyValueIfNotAlready();
-                                               return ObservableEx.FromAsyncUsingAsyncContext(ComputeResult);
-                                           })
-                                          .Subscribe(OnNewResult);
+            result.ShouldComputeNextResult
+                  .Take(1)
+                  .SelectMany(_ =>
+                  {
+                      NotifyValueIfNotAlready();
+                      return Observable.FromAsync(ComputeResult);
+                  })
+                  .TakeUntil(_disposed.Where(x => x))
+                  .Subscribe(OnNewResult);
+
             NotifyValueIfNotAlready();
 
             // We notify a new value only if the func() evaluation succeeds.
@@ -79,7 +79,7 @@ internal class ComputedObservable<T> : IObservable<T>
             var signalChangedObservable = Signal.SignalsRequested()
                                                 .TakeUntil(stopListeningForSignals)
                                                 .Where(signalRequested.Add)
-                                                .Select(static x => x.FutureChanges)
+                                                .Select(static x => x.FutureValuesUnit)
                                                 .Merge()
                                                 .Take(1);
 
@@ -88,7 +88,7 @@ internal class ComputedObservable<T> : IObservable<T>
                 var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 cancellationToken = cts.Token;
                 signalChangedObservable = signalChangedObservable.Do(_ => cts.Cancel())
-                                                                 .Finally(cts.Dispose);
+                                                                 .DoCancelOnCompleted(cts);
             }
 
             var scheduler = _observable._scheduler;
@@ -137,35 +137,35 @@ internal class ComputedObservable<T> : IObservable<T>
         }
 
 
-        public void Dispose() => _disposable.Dispose();
+        public void Dispose() => _disposed.OnNext(true);
     }
 
-    record struct ComputationResult(IObservable<Unit> ShouldComputeNextResult, Optional<T> ResultOptional);
-    readonly struct DisconnectOnDisposeObservable<TV> : IObservable<TV>
+    record struct ComputationResult(Observable<Unit> ShouldComputeNextResult, Optional<T> ResultOptional);
+    class DisconnectOnDisposeObservable<TV> : Observable<TV>
     {
-        readonly IObservable<TV> _observable;
+        readonly Observable<TV> _observable;
         readonly IDisposable _disconnect;
 
-        public DisconnectOnDisposeObservable(IObservable<TV> observable, IDisposable disconnect)
+        public DisconnectOnDisposeObservable(Observable<TV> observable, IDisposable disconnect)
         {
             _observable = observable;
             _disconnect = disconnect;
         }
 
-        public IDisposable Subscribe(IObserver<TV> observer)
+        protected override IDisposable SubscribeCore(Observer<TV> observer)
         {
-            _observable.Subscribe(observer);
+            _observable.Subscribe(observer.OnNext, observer.OnErrorResume, observer.OnCompleted);
             return _disconnect;
         }
     }
 
-    class SingleNotificationObservable<TNotification> : IObservable<TNotification>, IDisposable
+    class SingleNotificationObservable<TNotification> : Observable<TNotification>, IDisposable
     {
-        IObserver<TNotification>? _observer;
+        Observer<TNotification>? _observer;
         readonly object _locker = new();
         Optional<TNotification> _value;
 
-        public IDisposable Subscribe(IObserver<TNotification> observer)
+        protected override IDisposable SubscribeCore(Observer<TNotification> observer)
         {
             lock (_locker)
             {

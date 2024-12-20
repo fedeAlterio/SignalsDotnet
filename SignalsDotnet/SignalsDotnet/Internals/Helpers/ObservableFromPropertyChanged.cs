@@ -1,5 +1,5 @@
 ﻿using System.ComponentModel;
-using System.Reactive;
+using R3;
 
 namespace SignalsDotnet.Internals.Helpers;
 
@@ -15,7 +15,7 @@ internal static class ObservableFromPropertyChanged
         return new FromPropertyChangedObservableUnit(@this, futureChangesOnly);
     }
 
-    public readonly struct FromPropertyChangedObservableUnit : IObservable<Unit>
+    public class FromPropertyChangedObservableUnit : Observable<Unit>
     {
         readonly IReadOnlySignal _signal;
         readonly bool _futureChangesOnly;
@@ -26,7 +26,7 @@ internal static class ObservableFromPropertyChanged
             _futureChangesOnly = futureChangesOnly;
         }
 
-        public IDisposable Subscribe(IObserver<Unit> observer)
+        protected override IDisposable SubscribeCore(Observer<Unit> observer)
         {
             return new FromPropertyChangedSubscriptionUnit(observer, this);
         }
@@ -34,12 +34,12 @@ internal static class ObservableFromPropertyChanged
 
         class FromPropertyChangedSubscriptionUnit : IDisposable
         {
-            readonly IObserver<Unit> _observer;
+            readonly Observer<Unit> _observer;
             readonly FromPropertyChangedObservableUnit _observable;
             readonly object _locker = new();
             bool _isDisposed;
 
-            public FromPropertyChangedSubscriptionUnit(IObserver<Unit> observer, FromPropertyChangedObservableUnit observable)
+            public FromPropertyChangedSubscriptionUnit(Observer<Unit> observer, FromPropertyChangedObservableUnit observable)
             {
                 _observer = observer;
                 _observable = observable;
@@ -49,9 +49,9 @@ internal static class ObservableFromPropertyChanged
                     return;
                 }
 
+                _observer.OnNext(Unit.Default);
                 lock (_locker)
                 {
-                    _observer.OnNext(Unit.Default);
                     if (_isDisposed)
                     {
                         return;
@@ -85,7 +85,7 @@ internal static class ObservableFromPropertyChanged
     }
 
 
-    public readonly struct FromPropertyChangedObservable<T> : IObservable<T>
+    public class FromPropertyChangedObservable<T> : Observable<T>
     {
         readonly IReadOnlySignal<T> _signal;
         readonly bool _futureChangesOnly;
@@ -96,7 +96,7 @@ internal static class ObservableFromPropertyChanged
             _futureChangesOnly = futureChangesOnly;
         }
 
-        public IDisposable Subscribe(IObserver<T> observer)
+        protected override IDisposable SubscribeCore(Observer<T> observer)
         {
             return new FromPropertyChangedSubscription(observer, this);
         }
@@ -104,12 +104,12 @@ internal static class ObservableFromPropertyChanged
 
         class FromPropertyChangedSubscription : IDisposable
         {
-            readonly IObserver<T> _observer;
+            readonly Observer<T> _observer;
             readonly FromPropertyChangedObservable<T> _observable;
             readonly object _locker = new();
             bool _isDisposed;
 
-            public FromPropertyChangedSubscription(IObserver<T> observer, FromPropertyChangedObservable<T> observable)
+            public FromPropertyChangedSubscription(Observer<T> observer, FromPropertyChangedObservable<T> observable)
             {
                 _observer = observer;
                 _observable = observable;
@@ -119,9 +119,9 @@ internal static class ObservableFromPropertyChanged
                     return;
                 }
 
+                _observer.OnNext(_observable._signal.Value);
                 lock (_locker)
                 {
-                    _observer.OnNext(_observable._signal.Value);
                     if (_isDisposed)
                     {
                         return;

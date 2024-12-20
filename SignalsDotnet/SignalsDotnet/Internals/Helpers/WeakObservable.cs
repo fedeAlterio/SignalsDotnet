@@ -1,17 +1,12 @@
 ﻿using System.Reflection;
+using R3;
 
 namespace SignalsDotnet.Internals.Helpers;
 
 internal static class WeakObservable
 {
-    public static IDisposable SubscribeWeakly<T>(this IObservable<T> source, Action<T> onNext)
+    public static IDisposable SubscribeWeakly<T>(this Observable<T> source, Action<T> onNext)
     {
-        if (source is null)
-            throw new ArgumentNullException(nameof(source));
-
-        if (onNext is null)
-            throw new ArgumentNullException(nameof(onNext));
-
         var weakObserver = new WeakAction<T>(onNext);
         var subscription = source.Subscribe(weakObserver.OnNext);
         weakObserver.GarbageCollected += subscription.Dispose;

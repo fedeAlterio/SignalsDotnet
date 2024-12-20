@@ -1,12 +1,11 @@
 ﻿using System.Collections.Specialized;
 using System.ComponentModel;
-using System.Reactive;
-using System.Reactive.Linq;
+using R3;
 using SignalsDotnet.Configuration;
 
 namespace SignalsDotnet;
 
-public class CollectionSignal<T> : IReadOnlySignal<T?> where T : class, INotifyCollectionChanged
+public class CollectionSignal<T> : Observable<T>, IReadOnlySignal<T?> where T : class, INotifyCollectionChanged
 {
     readonly CollectionChangedSignalConfigurationDelegate? _collectionChangedConfiguration;
     readonly Signal<IReadOnlySignal<T>?> _signal;
@@ -20,7 +19,6 @@ public class CollectionSignal<T> : IReadOnlySignal<T?> where T : class, INotifyC
         _signal.PropertyChanged += (_, args) =>
         {
             PropertyChanged?.Invoke(this, args);
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(UntrackedValue)));
         };
     }
 
@@ -30,13 +28,15 @@ public class CollectionSignal<T> : IReadOnlySignal<T?> where T : class, INotifyC
         set => _signal.Value = value?.ToCollectionSignal(_collectionChangedConfiguration)!;
     }
 
-    public IObservable<Unit> Changed => this.Select(static _ => Unit.Default);
+    public Observable<Unit> ValuesUnit => _signal.Select(static x => x?.ValuesUnit ?? Observable.Return(Unit.Default))
+                                                 .Switch();
 
-    public IDisposable Subscribe(IObserver<T?> observer)
+    protected override IDisposable SubscribeCore(Observer<T> observer)
     {
-        return _signal.Select(static x => x ?? Observable.Return(default(T?)))
+        return _signal.Select(static x => x?.ValuesUnit ?? Observable.Return(Unit.Default))
                       .Switch()
-                      .Subscribe(observer);
+                      .Select(_ => Value)
+                      .Subscribe(observer.OnNext!, observer.OnErrorResume, observer.OnCompleted);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

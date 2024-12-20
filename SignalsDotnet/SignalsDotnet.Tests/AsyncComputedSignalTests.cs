@@ -1,8 +1,7 @@
-﻿using System.Reactive.Linq;
-using System.Reactive.Threading.Tasks;
-using FluentAssertions;
+﻿using FluentAssertions;
 using SignalsDotnet.Helpers;
 using SignalsDotnet.Tests.Helpers;
+using R3;
 
 namespace SignalsDotnet.Tests;
 public class AsyncComputedSignalTests
@@ -23,7 +22,7 @@ public class AsyncComputedSignalTests
 
         var computed = Signal.AsyncComputed(Sum, 0, () => Optional<int>.Empty);
         int notifiedValue = 0;
-        computed.Subscribe(_ => notifiedValue++);
+        computed.Values().Subscribe(_ => notifiedValue++);
         _ = computed.Value;
         await TestHelpers.WaitUntil(() => notifiedValue == 1);
 
@@ -123,12 +122,12 @@ public class AsyncComputedSignalTests
 
         var notifiedCount = 0;
         _ = sum.Value;
-        await sum.Where(x => x == 0)
+        await sum.Values().Where(x => x == 0)
                  .Take(1)
-                 .ToTask()
+                 .WaitAsync()
                  .ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
 
-        sum.Skip(1).Subscribe(_ => notifiedCount++);
+        sum.Values().Skip(1).Subscribe(_ => notifiedCount++);
         await middleComputationTcs.Task;
 
         _ = signal3.Value;
@@ -192,9 +191,39 @@ public class AsyncComputedSignalTests
             return sum;
         }, -1);
 
-        var task = computed.FirstAsync(x => x == 20)
-                           .ToTask();
-
+        var task = computed.Values().FirstAsync(x => x == 20);
         await task;
+    }
+
+    [Fact]
+    public async Task SimpleTest()
+    {
+        await this.SwitchToMainThread();
+
+        Signal<int> signal = new(0);
+        var asyncComputed = Signal.AsyncComputed(async _ =>
+        {
+            var x = signal.Value;
+            await Task.Yield();
+            await Task.Yield();
+            await Task.Yield();
+            return x;
+        }, -1, configuration: x => x with
+        {
+            SubscribeWeakly = false
+        });
+
+        _ = asyncComputed.Value;
+        signal.Value = 0;
+        signal.Value = 1;
+        signal.Value = 2;
+        signal.Value = 3;
+        signal.Value = 4;
+        signal.Value = 5;
+
+        await asyncComputed.Values()
+                           .Timeout(TimeSpan.FromSeconds(1))
+                           .FirstAsync(x => x == 5)
+                           .ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
     }
 }

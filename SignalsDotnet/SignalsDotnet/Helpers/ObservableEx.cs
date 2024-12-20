@@ -1,22 +1,23 @@
-﻿using System.Reactive.Linq;
+﻿using R3;
 
 namespace SignalsDotnet.Helpers;
 
 public static class ObservableEx
 {
-    public static IObservable<T> DisconnectWhen<T>(this IObservable<T> @this, IObservable<bool> isDisconnected)
+    public static Observable<T> DisconnectWhen<T>(this Observable<T> @this, Observable<bool> isDisconnected)
     {
-        return isDisconnected.StartWith(true)
-                             .DistinctUntilChanged()
-                             .Replay(1)
-                             .AutoConnect(0)
-                             .Select(x => x switch
-                             {
-                                 false => @this,
-                                 true => Observable.Empty<T>()
-                             })
-                             .Switch()
-                             .Publish()
-                             .RefCount();
+        throw new InvalidOperationException();
+        //return isDisconnected.Prepend(true)
+        //                     .DistinctUntilChanged()
+        //                     .Replay(1)
+        //                     .AutoConnect(0)
+        //                     .Select(x => x switch
+        //                     {
+        //                         false => @this,
+        //                         true => Observable.Empty<T>()
+        //                     })
+        //                     .Switch()
+        //                     .Publish()
+        //                     .RefCount();
     }
 }

@@ -1,13 +1,14 @@
-﻿using System.Reactive;
+﻿using System.ComponentModel;
+using R3;
 using SignalsDotnet.Configuration;
 using SignalsDotnet.Internals.Helpers;
 
 namespace SignalsDotnet;
 
-public class Signal<T> : Signal, IReadOnlySignal<T?>, IEquatable<Signal<T>>
+public class Signal<T> : Observable<T>, IReadOnlySignal<T?>, IEquatable<Signal<T>>
 {
     readonly SignalConfiguration<T> _configuration;
-    public Signal(SignalConfigurationDelegate<T?>? configurator = null) : this(default!, configurator!) 
+    public Signal(SignalConfigurationDelegate<T?>? configurator = null) : this(default!, configurator!)
     {
     }
 
@@ -25,15 +26,32 @@ public class Signal<T> : Signal, IReadOnlySignal<T?>, IEquatable<Signal<T>>
     T _value;
     public T Value
     {
-        get => GetValue(this, in _value);
-        set => SetValue(ref _value, value, _configuration.Comparer, _configuration.RaiseOnlyWhenChanged);
+        get => Signal.GetValue(this, in _value);
+        set
+        {
+            if (EqualityComparer<T>.Default.Equals(_value, value))
+                return;
+
+            _value = value;
+
+            var propertyChanged = PropertyChanged;
+            if (propertyChanged is null)
+            {
+                return;
+            }
+
+            using (Signal.UntrackedScope())
+            {
+                propertyChanged(this, Signal.PropertyChangedArgs);
+            }
+        }
     }
 
     public T UntrackedValue => _value;
     object? IReadOnlySignal.UntrackedValue => UntrackedValue;
 
-    public IDisposable Subscribe(IObserver<T?> observer) => this.OnPropertyChanged(false)
-                                                                .Subscribe(observer);
+    protected override IDisposable SubscribeCore(Observer<T> observer) => this.OnPropertyChanged(false)
+                                                                              .Subscribe(observer.OnNext!, observer.OnErrorResume, observer.OnCompleted);
 
     public bool Equals(Signal<T>? other)
     {
@@ -64,6 +82,8 @@ public class Signal<T> : Signal, IReadOnlySignal<T?>, IEquatable<Signal<T>>
     public static bool operator !=(Signal<T> a, Signal<T> b) => !(a == b);
 
     public override int GetHashCode() => _value is null ? 0 : _configuration.Comparer.GetHashCode(_value!);
-    public IObservable<Unit> Changed => this.OnPropertyChangedAsUnit(false);
-    public IObservable<Unit> FutureChanges => this.OnPropertyChangedAsUnit(true);
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    public Observable<Unit> ValuesUnit => this.OnPropertyChangedAsUnit(false);
+    public Observable<Unit> FutureValuesUnit => this.OnPropertyChangedAsUnit(true);
 }
