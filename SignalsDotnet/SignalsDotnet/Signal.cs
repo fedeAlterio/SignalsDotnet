@@ -23,8 +23,10 @@ public static partial class Signal
         {
             oldAffinity = _computedSignalAffinityValue.Value;
             _computedSignalAffinityValue.Value = _nextComputedSignalAffinityValue;
-            var currentValue = _nextComputedSignalAffinityValue;
-            _nextComputedSignalAffinityValue = currentValue == uint.MaxValue ? 0 : currentValue + 1;
+            unchecked
+            {
+                _nextComputedSignalAffinityValue++;
+            }
         }
 
         return new UntrackedReleaserDisposable(oldAffinity);
@@ -98,8 +100,10 @@ public static partial class Signal
             {
                 var affinityValue = _nextComputedSignalAffinityValue;
 
-                var currentValue = _nextComputedSignalAffinityValue;
-                _nextComputedSignalAffinityValue = currentValue == uint.MaxValue ? 0 : currentValue + 1;
+                unchecked
+                {
+                    _nextComputedSignalAffinityValue++;
+                }
 
                 _computedSignalAffinityValue.Value = affinityValue;
                 var subject = new Subject<IReadOnlySignal>();

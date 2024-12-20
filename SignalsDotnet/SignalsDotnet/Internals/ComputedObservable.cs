@@ -79,7 +79,7 @@ internal class ComputedObservable<T> : Observable<T>
             var signalChangedObservable = Signal.SignalsRequested()
                                                 .TakeUntil(stopListeningForSignals)
                                                 .Where(signalRequested.Add)
-                                                .Select(static x => x.FutureValuesUnit)
+                                                .Select(static x => x.FutureValues)
                                                 .Merge()
                                                 .Take(1);
 

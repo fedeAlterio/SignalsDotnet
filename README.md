@@ -1,7 +1,7 @@
 # Nuget https://www.nuget.org/packages/SignalsDotnet
 
 # Angular Signals for .Net
-This library is a porting of the Angular Signals in the .Net World, adapted to the .Net MVVM UI Frameworks and based on ReactiveX.
+This library is a porting of the Angular Signals in the .Net World, adapted to the .Net MVVM UI Frameworks and based on R3 (variant of ReactiveX).
 If you need an introduction to what a signal is, try to see: https://angular.io/guide/signals.
 
 # Get Started
@@ -42,14 +42,12 @@ public static class DelegateCommandExtensions
 ```c#
 public class LoginViewModel : IActivatableViewModel
 {
+    // Value set from outside.
+    public Signal<bool> IsDeactivated { get; } = new(false);
     public LoginViewModel()
-    {
-        // Here i am using ReactiveUI to check when the viewmodel is activated, but in general any IObservable<bool> works just fine
-        // We can also use a Signal<bool> and set the Value manually
-        IObservable<bool> isDeactivated = this.IsDeactivated();
-
+    {      
         var computedFactory = ComputedSignalFactory.Default
-                                                   .DisconnectEverythingWhen(isDeactivated)
+                                                   .DisconnectEverythingWhen(isDeactivated.Values)
                                                    .OnException(exception =>
                                                    {
                                                        /* log or do something with it */
@@ -166,7 +164,7 @@ public class City
 
 public record PersonCoordinates(Person Person, Room Room, House House, City City);
 ```
-Every signal implements the IObservable interface, so we can apply against them all ReactiveX operators we want.
+Every signal has a property `Values` that is an Observable and notifies us whenever the signal changes. 
 ## `Signal<T>`
 ```c#
     public Signal<Person> Person { get; } = new();
@@ -226,10 +224,10 @@ Basically to create it you need to pass a function that computes the value. That
 
 It automatically recognize which are the signals it depends by, and listen for them to change. Whenever a signal changes, the function is executed again, and a new value is produced (the `INotifyPropertyChanged` is raised).
 
-It is possible to specify whether or not to subscribe weakly (default option), or strongly. It is possible also here to specify a custom `EqualityComparer`.
+It is possible to specify whether or not to subscribe weakly, or strongly (default option). It is possible also here to specify a custom `EqualityComparer`.
 
-Usuually you want to stop all asynchronous computation according to some boolean condition.
-This can be easily done via `ComputedSignalFactory.DisconnectEverythingWhen(isDeactivated)`. Whenever the isDeactivated observables notfies `true`, every pending async computation will be cancelled. Later on, when it notifies a `false`, all the computed signals will be recomputed again. 
+Usually you want to stop all asynchronous computation according to some boolean condition.
+This can be easily done via `ComputedSignalFactory.DisconnectEverythingWhen(isDeactivated)`. Whenever the isDeactivated observable notfies `true`, every pending async computation will be cancelled. Later on, when it notifies a `false`, all the computed signals will be recomputed again. 
 
 You can find useful also `CancellationSignal.Create(booleanObservable)`, that converts a boolean observable into a `IReadOnlySignal<CancellationToken>`, that automatically creates, cancels and disposes new cancellation tokens according to a boolean observable.
 

@@ -5,7 +5,7 @@ using SignalsDotnet.Internals.Helpers;
 
 namespace SignalsDotnet;
 
-public class Signal<T> : Observable<T>, IReadOnlySignal<T?>, IEquatable<Signal<T>>
+public class Signal<T> : IReadOnlySignal<T>, IEquatable<Signal<T>>
 {
     readonly SignalConfiguration<T> _configuration;
     public Signal(SignalConfigurationDelegate<T?>? configurator = null) : this(default!, configurator!)
@@ -50,8 +50,8 @@ public class Signal<T> : Observable<T>, IReadOnlySignal<T?>, IEquatable<Signal<T
     public T UntrackedValue => _value;
     object? IReadOnlySignal.UntrackedValue => UntrackedValue;
 
-    protected override IDisposable SubscribeCore(Observer<T> observer) => this.OnPropertyChanged(false)
-                                                                              .Subscribe(observer.OnNext!, observer.OnErrorResume, observer.OnCompleted);
+    public Observable<T> FutureValues => this.OnPropertyChanged(true);
+    public Observable<T> Values => this.OnPropertyChanged(false);
 
     public bool Equals(Signal<T>? other)
     {
@@ -84,6 +84,6 @@ public class Signal<T> : Observable<T>, IReadOnlySignal<T?>, IEquatable<Signal<T
     public override int GetHashCode() => _value is null ? 0 : _configuration.Comparer.GetHashCode(_value!);
 
     public event PropertyChangedEventHandler? PropertyChanged;
-    public Observable<Unit> ValuesUnit => this.OnPropertyChangedAsUnit(false);
-    public Observable<Unit> FutureValuesUnit => this.OnPropertyChangedAsUnit(true);
+    Observable<Unit> IReadOnlySignal.Values => this.OnPropertyChangedAsUnit(false);
+    Observable<Unit> IReadOnlySignal.FutureValues => this.OnPropertyChangedAsUnit(true);
 }

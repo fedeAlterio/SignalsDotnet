@@ -22,7 +22,7 @@ public class AsyncComputedSignalTests
 
         var computed = Signal.AsyncComputed(Sum, 0, () => Optional<int>.Empty);
         int notifiedValue = 0;
-        computed.Values().Subscribe(_ => notifiedValue++);
+        computed.Values.Subscribe(_ => notifiedValue++);
         _ = computed.Value;
         await TestHelpers.WaitUntil(() => notifiedValue == 1);
 
@@ -122,12 +122,12 @@ public class AsyncComputedSignalTests
 
         var notifiedCount = 0;
         _ = sum.Value;
-        await sum.Values().Where(x => x == 0)
+        await sum.Values.Where(x => x == 0)
                  .Take(1)
                  .WaitAsync()
                  .ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
 
-        sum.Values().Skip(1).Subscribe(_ => notifiedCount++);
+        sum.Values.Skip(1).Subscribe(_ => notifiedCount++);
         await middleComputationTcs.Task;
 
         _ = signal3.Value;
@@ -150,10 +150,10 @@ public class AsyncComputedSignalTests
         var waitForCancellationSignal = new Signal<bool>(false);
         var cancellationToken = new Signal<CancellationToken?>();
         var computedSignal = ComputedSignalFactory.Default
-                                                  .DisconnectEverythingWhen(cancellationRequested)
+                                                  .DisconnectEverythingWhen(cancellationRequested.Values)
                                                   .AsyncComputed(async token =>
                                                   {
-                                                      await waitForCancellationSignal.FirstAsync(x => x);
+                                                      await waitForCancellationSignal.Values.FirstAsync(x => x);
                                                       cancellationToken.Value = token;
                                                       return 1;
                                                   }, 0);
@@ -162,13 +162,13 @@ public class AsyncComputedSignalTests
         cancellationRequested.Value = true;
         waitForCancellationSignal.Value = true;
 
-        await cancellationToken.FirstAsync(x => x is not null);
+        await cancellationToken.Values.FirstAsync(x => x is not null);
         cancellationToken.Value!.Value.IsCancellationRequested.Should().Be(true);
 
         cancellationToken.Value = null;
         cancellationRequested.Value = false;
 
-        await cancellationToken.FirstAsync(x => x is not null);
+        await cancellationToken.Values.FirstAsync(x => x is not null);
         cancellationToken.Value!.Value.IsCancellationRequested.Should().BeFalse();
     }
 
@@ -191,7 +191,7 @@ public class AsyncComputedSignalTests
             return sum;
         }, -1);
 
-        var task = computed.Values().FirstAsync(x => x == 20);
+        var task = computed.Values.FirstAsync(x => x == 20);
         await task;
     }
 
@@ -221,7 +221,7 @@ public class AsyncComputedSignalTests
         signal.Value = 4;
         signal.Value = 5;
 
-        await asyncComputed.Values()
+        await asyncComputed.Values
                            .Timeout(TimeSpan.FromSeconds(1))
                            .FirstAsync(x => x == 5)
                            .ConfigureAwait(ConfigureAwaitOptions.ForceYielding);

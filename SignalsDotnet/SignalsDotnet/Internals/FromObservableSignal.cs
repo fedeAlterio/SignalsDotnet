@@ -5,13 +5,15 @@ using SignalsDotnet.Internals.Helpers;
 
 namespace SignalsDotnet.Internals;
 
-internal class FromObservableSignal<T> : Observable<T>, IReadOnlySignal<T?>, IEquatable<FromObservableSignal<T?>>
+internal class FromObservableSignal<T> : IReadOnlySignal<T>, IEquatable<FromObservableSignal<T?>>
 {
     readonly ReadonlySignalConfiguration<T?> _configuration;
     readonly Subject<Unit> _someoneAskedValueSubject = new(); // lock
     int _someoneAskedValue; // 1 means true, 0 means false
 
+#pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
     public FromObservableSignal(Observable<T> observable,
+#pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
                                 ReadonlySignalConfigurationDelegate<T?>? configuration = null)
     {
         if (observable is null)
@@ -42,8 +44,8 @@ internal class FromObservableSignal<T> : Observable<T>, IReadOnlySignal<T?>, IEq
         Value = value;
     }
 
-    T? _value;
-    public T? Value
+    T _value;
+    public T Value
     {
         get
         {
@@ -70,7 +72,7 @@ internal class FromObservableSignal<T> : Observable<T>, IReadOnlySignal<T?>, IEq
         }
     }
 
-    public T? UntrackedValue => _value;
+    public T UntrackedValue => _value;
     object? IReadOnlySignal.UntrackedValue => UntrackedValue;
 
     void NotifySomeoneAskedAValue()
@@ -84,8 +86,8 @@ internal class FromObservableSignal<T> : Observable<T>, IReadOnlySignal<T?>, IEq
         _someoneAskedValueSubject.Dispose();
     }
 
-    protected override IDisposable SubscribeCore(Observer<T> observer) => this.OnPropertyChanged(false)
-                                                                               .Subscribe(observer.OnNext!, observer.OnErrorResume, observer.OnCompleted);
+    public Observable<T> Values => this.OnPropertyChanged(false);
+    public Observable<T> FutureValues => this.OnPropertyChanged(true);
 
     public bool Equals(FromObservableSignal<T?>? other)
     {
@@ -113,8 +115,10 @@ internal class FromObservableSignal<T> : Observable<T>, IReadOnlySignal<T?>, IEq
     public static bool operator !=(FromObservableSignal<T> a, FromObservableSignal<T> b) => !(a == b);
 
     public override int GetHashCode() => _value is null ? 0 : _configuration.Comparer.GetHashCode(_value);
-    public Observable<Unit> ValuesUnit => this.Select(static _ => Unit.Default);
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    Observable<Unit> IReadOnlySignal.Values => this.OnPropertyChangedAsUnit(false);
+    Observable<Unit> IReadOnlySignal.FutureValues => this.OnPropertyChangedAsUnit(true);
 }
 
 internal class FromObservableAsyncSignal<T> : FromObservableSignal<T>, IAsyncReadOnlySignal<T>

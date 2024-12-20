@@ -5,7 +5,7 @@ using SignalsDotnet.Configuration;
 
 namespace SignalsDotnet;
 
-public class CollectionSignal<T> : Observable<T>, IReadOnlySignal<T?> where T : class, INotifyCollectionChanged
+public class CollectionSignal<T> : IReadOnlySignal<T?> where T : class, INotifyCollectionChanged
 {
     readonly CollectionChangedSignalConfigurationDelegate? _collectionChangedConfiguration;
     readonly Signal<IReadOnlySignal<T>?> _signal;
@@ -28,19 +28,19 @@ public class CollectionSignal<T> : Observable<T>, IReadOnlySignal<T?> where T : 
         set => _signal.Value = value?.ToCollectionSignal(_collectionChangedConfiguration)!;
     }
 
-    public Observable<Unit> ValuesUnit => _signal.Select(static x => x?.ValuesUnit ?? Observable.Return(Unit.Default))
-                                                 .Switch();
+    public Observable<T?> Values => _signal.Values
+                                           .Select(static x => x?.Values ?? Observable.Return<T?>(null)!)
+                                           .Switch()!;
+    
+    public Observable<T?> FutureValues => Values.Skip(1);
 
-    protected override IDisposable SubscribeCore(Observer<T> observer)
-    {
-        return _signal.Select(static x => x?.ValuesUnit ?? Observable.Return(Unit.Default))
-                      .Switch()
-                      .Select(_ => Value)
-                      .Subscribe(observer.OnNext!, observer.OnErrorResume, observer.OnCompleted);
-    }
-
+ 
     public event PropertyChangedEventHandler? PropertyChanged;
     object? IReadOnlySignal.UntrackedValue => UntrackedValue;
     public T? UntrackedValue => _signal.UntrackedValue?.UntrackedValue;
     public T? UntrackedCollectionChangedValue => _signal.Value?.UntrackedValue;
+
+    Observable<Unit> IReadOnlySignal.Values => _signal.Values
+                                                      .Select(static x => ((IReadOnlySignal?)x)?.Values ?? Observable.Return<Unit>(Unit.Default))
+                                                      .Switch();
 }

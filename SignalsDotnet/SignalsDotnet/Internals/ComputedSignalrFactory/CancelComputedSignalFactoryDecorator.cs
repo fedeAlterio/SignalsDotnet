@@ -18,7 +18,7 @@ internal class CancelComputedSignalFactoryDecorator : IComputedSignalFactory
 
     public IReadOnlySignal<T> Computed<T>(Func<T> func, Func<Optional<T>> fallbackValue, ReadonlySignalConfigurationDelegate<T?>? configuration = null)
     {
-        return ComputedObservable(func, fallbackValue).ToSignal(configuration!)!;
+        return ComputedObservable(func, fallbackValue).ToSignal(configuration!);
     }
 
     public IAsyncReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,
@@ -27,7 +27,7 @@ internal class CancelComputedSignalFactoryDecorator : IComputedSignalFactory
                                                     ConcurrentChangeStrategy concurrentChangeStrategy = default, ReadonlySignalConfigurationDelegate<T>? configuration = null)
     {
         func = func.TraceWhenExecuting(out var isExecuting);
-        return AsyncComputedObservable(func, startValue, fallbackValue, concurrentChangeStrategy).ToAsyncSignal(isExecuting, configuration!)!;
+        return AsyncComputedObservable(func, startValue, fallbackValue, concurrentChangeStrategy).ToAsyncSignal(isExecuting, configuration!);
     }
 
     public Observable<T> ComputedObservable<T>(Func<T> func, Func<Optional<T>> fallbackValue)

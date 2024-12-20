@@ -11,7 +11,7 @@ public class CollectionSignalTests
     {
         var city = new City();
         bool anyNiceChair = false;
-        city.AnyNiceChair.Values().Subscribe(x => anyNiceChair = x);
+        city.AnyNiceChair.Values.Subscribe(x => anyNiceChair = x);
 
         var house = new House();
         city.Houses.Value = [house];

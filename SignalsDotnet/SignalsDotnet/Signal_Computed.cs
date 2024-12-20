@@ -18,7 +18,7 @@ public partial class Signal
         return Computed(func.ToAsyncValueTask(), default, fallbackValue, default, configuration);
     }
 
-    public static IReadOnlySignal<T?> Computed<T>(Func<T> func, ReadonlySignalConfigurationDelegate<T?>? configuration = null)
+    public static IReadOnlySignal<T> Computed<T>(Func<T> func, ReadonlySignalConfigurationDelegate<T?>? configuration = null)
     {
         return Computed(func.ToAsyncValueTask(), default, static () => Optional<T>.Empty, default, configuration);
     }
@@ -81,7 +81,7 @@ public partial class Signal
             valueObservable = valueObservable.Prepend(startValue);
         }
 
-        return new FromObservableSignal<T>(valueObservable, configuration)!;
+        return new FromObservableSignal<T>(valueObservable, configuration);
     }
 
     internal static IAsyncReadOnlySignal<T> AsyncComputed<T>(Func<CancellationToken, ValueTask<T>> func,

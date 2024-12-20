@@ -54,7 +54,7 @@ public class ComputedBenchmarks
         _ = _asyncComputed.Value;
         _signal.Value = 0;
         _signal.Value = 1;
-        return await _asyncComputed.Values()
+        return await _asyncComputed.Values
                                    .FirstAsync(x => x == 1)
                                    .ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
     }

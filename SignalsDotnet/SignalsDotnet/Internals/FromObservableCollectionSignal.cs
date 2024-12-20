@@ -6,7 +6,7 @@ using SignalsDotnet.Internals.Helpers;
 
 namespace SignalsDotnet.Internals;
 
-internal class FromObservableCollectionSignal<T> : Observable<T>, IReadOnlySignal<T> where T : INotifyCollectionChanged
+internal class FromObservableCollectionSignal<T> : IReadOnlySignal<T> where T : INotifyCollectionChanged
 {
     readonly Subject<Unit> _collectionChanged = new();
     
@@ -28,17 +28,14 @@ internal class FromObservableCollectionSignal<T> : Observable<T>, IReadOnlySigna
         {
             observable.Subscribe(OnCollectionChanged);
         }
-        
-        Observable<Unit> collectionChanged = _collectionChanged;
-        collectionChanged = configuration.CollectionChangedObservableMapper.Invoke(collectionChanged);
-        ValuesUnit = collectionChanged.Prepend(Unit.Default);
     }
 
     void OnCollectionChanged((object? sender, NotifyCollectionChangedEventArgs e) _) => _collectionChanged.OnNext(default);
 
-    protected override IDisposable SubscribeCore(Observer<T> observer) => ValuesUnit.Select(_ => Value)
-                                                                                    .Subscribe(observer.OnNext, observer.OnErrorResume, observer.OnCompleted);
-    public Observable<Unit> ValuesUnit { get; }
+    public Observable<T> Values => _collectionChanged.Select(_ => Value)
+                                                    .Prepend(() => Value);
+
+    public Observable<T> FutureValues => _collectionChanged.Select(_ => Value);
 
     readonly T _value;
     public T Value => Signal.GetValue(this, in _value);
@@ -46,4 +43,7 @@ internal class FromObservableCollectionSignal<T> : Observable<T>, IReadOnlySigna
     object IReadOnlySignal.UntrackedValue => UntrackedValue;
     public T UntrackedValue => _value;
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    Observable<Unit> IReadOnlySignal.Values => _collectionChanged.Prepend(Unit.Default);
+    Observable<Unit> IReadOnlySignal.FutureValues => _collectionChanged;
 }

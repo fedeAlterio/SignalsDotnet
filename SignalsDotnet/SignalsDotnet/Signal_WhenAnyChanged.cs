@@ -17,7 +17,7 @@ public static partial class Signal
         if (signals.Count == 0)
             return Observable.Empty<Unit>();
 
-        return signals.Select(x => x.FutureValuesUnit)
+        return signals.Select(x => x.FutureValues)
                       .Merge()
                       .Prepend(Unit.Default);
     }
