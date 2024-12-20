@@ -22,7 +22,7 @@ public static class ComputedSignalFactoryEx
         return @this.Computed(func, () => new Optional<T>(fallbackValue()), configuration);
     }
 
-    public static IReadOnlySignal<T?> Computed<T>(this IComputedSignalFactory @this, Func<T> func, ReadonlySignalConfigurationDelegate<T?>? configuration = null)
+    public static IReadOnlySignal<T> Computed<T>(this IComputedSignalFactory @this, Func<T> func, ReadonlySignalConfigurationDelegate<T?>? configuration = null)
     {
         return @this.Computed(func, static () => default, configuration);
     }

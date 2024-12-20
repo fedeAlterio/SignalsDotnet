@@ -1,3 +1,6 @@
+<img src="./assets/demo.gif"/>
+
+
 # Nuget https://www.nuget.org/packages/SignalsDotnet
 
 # Angular Signals for .Net

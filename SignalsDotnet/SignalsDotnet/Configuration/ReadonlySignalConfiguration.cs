@@ -5,5 +5,5 @@ public record ReadonlySignalConfiguration<T>(IEqualityComparer<T> Comparer,
                                              bool RaiseOnlyWhenChanged,
                                              bool SubscribeWeakly)
 {
-    public static ReadonlySignalConfiguration<T> Default { get; } = new(EqualityComparer<T>.Default, true, true);
+    public static ReadonlySignalConfiguration<T> Default { get; } = new(EqualityComparer<T>.Default, true, false);
 }
