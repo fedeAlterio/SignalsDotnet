@@ -43,7 +43,7 @@ public static class DelegateCommandExtensions
 
 ## Example 2
 ```c#
-public class LoginViewModel : IActivatableViewModel
+public class LoginViewModel
 {
     // Value set from outside.
     public Signal<bool> IsDeactivated { get; } = new(false);
@@ -75,9 +75,6 @@ public class LoginViewModel : IActivatableViewModel
             var lastCall = ApiCalls.Value.LastOrDefault();
             return $"Total api calls: {ApiCalls.Value.Count}. Last started at {lastCall?.StartedAt}, and ended at {lastCall?.EndedAt.Value}";
         })!;
-
-        // Signals are observable, so they can easily integrated with reactiveUI
-        LoginCommand = ReactiveCommand.Create(() => { /* login.. */ }, CanLogin);
     }
 
     public ViewModelActivator Activator { get; } = new();
