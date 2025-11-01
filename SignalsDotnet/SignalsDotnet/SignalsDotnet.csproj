@@ -7,7 +7,7 @@
     <Description>Porting of Angular signals to dotnet</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/fedeAlterio/SignalsDotnet</RepositoryUrl>
-    <Version>2.0.4</Version>
+    <Version>2.0.5</Version>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <PackageIcon>icon.png</PackageIcon>
     <PackageProjectUrl>https://github.com/fedeAlterio/SignalsDotnet</PackageProjectUrl>
