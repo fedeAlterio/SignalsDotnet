@@ -195,7 +195,7 @@ It is also possible to Apply some Throttle-like behavior on the collection chang
 public CollectionSignal<ObservableCollection<Person>> People { get; } = new(collectionChangedConfiguration: config => config.ThrottleOneCycle(UIReactiveScheduler))
 ```
 
-## Computed Signals
+## Computed Signals & Linked Signals
 ```c#
  public LoginViewModel()
  {
@@ -220,7 +220,7 @@ public CollectionSignal<ObservableCollection<Person>> People { get; } = new(coll
 ```
 A computed signal, is a signal that depends by other signals. 
 
-Basically to create it you need to pass a function that computes the value. That function can be synchronous or asynchronous.
+Basically to create it you need to pass a function that computes the value. That function can be synchronous or asynchronous. A Linked Signal is a computed signal that can also be manually written to, so basically everything that applies to Computed is also valid to Linked signals.
 
 It automatically recognize which are the signals it depends by, and listen for them to change. Whenever a signal changes, the function is executed again, and a new value is produced (the `INotifyPropertyChanged` is raised).
 
