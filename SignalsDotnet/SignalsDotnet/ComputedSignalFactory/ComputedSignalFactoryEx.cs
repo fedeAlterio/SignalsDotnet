@@ -45,4 +45,33 @@ public static class ComputedSignalFactoryEx
     {
         return @this.AsyncComputed(func, startValue, static () => default, concurrentChangeStrategy, configuration);
     }
+
+    public static ISignal<T> Linked<T>(this IComputedSignalFactory @this, Func<T> func, Func<T> fallbackValue, ReadonlySignalConfigurationDelegate<T?>? configuration = null)
+    {
+        return @this.Linked(func, () => new Optional<T>(fallbackValue()), configuration);
+    }
+
+    public static ISignal<T> Linked<T>(this IComputedSignalFactory @this, Func<T> func, ReadonlySignalConfigurationDelegate<T?>? configuration = null)
+    {
+        return @this.Linked(func, static () => default, configuration);
+    }
+
+    public static IAsyncSignal<T> AsyncLinked<T>(this IComputedSignalFactory @this,
+                                                  Func<CancellationToken, ValueTask<T>> func,
+                                                  T startValue,
+                                                  Func<T> fallbackValue,
+                                                  ConcurrentChangeStrategy concurrentChangeStrategy = default,
+                                                  ReadonlySignalConfigurationDelegate<T>? configuration = null)
+    {
+        return @this.AsyncLinked(func, startValue, () => new Optional<T>(fallbackValue()), concurrentChangeStrategy, configuration);
+    }
+
+    public static IAsyncSignal<T> AsyncLinked<T>(this IComputedSignalFactory @this,
+                                                  Func<CancellationToken, ValueTask<T>> func,
+                                                  T startValue,
+                                                  ConcurrentChangeStrategy concurrentChangeStrategy = default,
+                                                  ReadonlySignalConfigurationDelegate<T>? configuration = null)
+    {
+        return @this.AsyncLinked(func, startValue, static () => default, concurrentChangeStrategy, configuration);
+    }
 }

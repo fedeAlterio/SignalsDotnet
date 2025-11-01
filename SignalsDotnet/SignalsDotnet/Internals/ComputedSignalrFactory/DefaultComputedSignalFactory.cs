@@ -31,6 +31,20 @@ internal class DefaultComputedSignalFactory : IComputedSignalFactory
         return Signal.AsyncComputedObservable(func, startValue, fallbackValue, concurrentChangeStrategy);
     }
 
+    public ISignal<T> Linked<T>(Func<T> func, Func<Optional<T>> fallbackValue, ReadonlySignalConfigurationDelegate<T?>? configuration = null)
+    {
+        return Signal.Linked(func, fallbackValue, configuration);
+    }
+
+    public IAsyncSignal<T> AsyncLinked<T>(Func<CancellationToken, ValueTask<T>> func,
+                                          T startValue,
+                                          Func<Optional<T>> fallbackValue,
+                                          ConcurrentChangeStrategy concurrentChangeStrategy = default,
+                                          ReadonlySignalConfigurationDelegate<T>? configuration = null)
+    {
+        return Signal.AsyncLinked(func, startValue, fallbackValue, concurrentChangeStrategy, configuration);
+    }
+
 
     public Effect Effect(Action onChange, TimeProvider? scheduler)
     {

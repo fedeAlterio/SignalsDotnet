@@ -20,7 +20,14 @@ public interface IReadOnlySignal<T> : IReadOnlySignal
     object? IReadOnlySignal.Value => Value;
 }
 
+public interface ISignal<T> : IReadOnlySignal<T>
+{
+    new T Value { get; set; }
+}
+
 public interface IAsyncReadOnlySignal<T> : IReadOnlySignal<T>
 {
     IReadOnlySignal<bool> IsComputing { get; }
 }
+
+public interface IAsyncSignal<T> : IAsyncReadOnlySignal<T>, ISignal<T>;

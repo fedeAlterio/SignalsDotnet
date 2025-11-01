@@ -18,7 +18,6 @@ internal class OnErrorComputedSignalFactoryDecorator : IComputedSignalFactory
         _onException = onException;
     }
 
-
     public IReadOnlySignal<T> Computed<T>(Func<T> func, Func<Optional<T>> fallbackValue, ReadonlySignalConfigurationDelegate<T?>? configuration = null)
     {
         return ComputedObservable(func, fallbackValue).ToSignal(configuration!);
@@ -60,6 +59,42 @@ internal class OnErrorComputedSignalFactoryDecorator : IComputedSignalFactory
                 throw;
             }
         }, startValue, fallbackValue, concurrentChangeStrategy);
+    }
+
+    public ISignal<T> Linked<T>(Func<T> func, Func<Optional<T>> fallbackValue, ReadonlySignalConfigurationDelegate<T?>? configuration = null)
+    {
+        return _parent.Linked(() =>
+        {
+            try
+            {
+                return func();
+            }
+            catch (Exception e)
+            {
+                NotifyException(e);
+                throw;
+            }
+        }, fallbackValue, configuration);
+    }
+
+    public IAsyncSignal<T> AsyncLinked<T>(Func<CancellationToken, ValueTask<T>> func,
+                                          T startValue,
+                                          Func<Optional<T>> fallbackValue,
+                                          ConcurrentChangeStrategy concurrentChangeStrategy = default,
+                                          ReadonlySignalConfigurationDelegate<T>? configuration = null)
+    {
+        return _parent.AsyncLinked(async token =>
+        {
+            try
+            {
+                return await func(token);
+            }
+            catch (Exception e)
+            {
+                NotifyException(e);
+                throw;
+            }
+        }, startValue, fallbackValue, concurrentChangeStrategy, configuration);
     }
 
     public Effect Effect(Action onChange, TimeProvider? scheduler = null)
