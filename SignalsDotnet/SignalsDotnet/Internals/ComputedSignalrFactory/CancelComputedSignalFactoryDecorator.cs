@@ -62,6 +62,21 @@ internal class CancelComputedSignalFactoryDecorator : IComputedSignalFactory
                       .Select(static x => x.Value)!;
     }
 
+    public ISignal<T> Linked<T>(Func<T> func, Func<Optional<T>> fallbackValue, ReadonlySignalConfigurationDelegate<T?>? configuration = null)
+    {
+        return ComputedObservable(func, fallbackValue).ToLinkedSignal(configuration);
+    }
+
+    public IAsyncSignal<T> AsyncLinked<T>(Func<CancellationToken, ValueTask<T>> func,
+                                          T startValue,
+                                          Func<Optional<T>> fallbackValue,
+                                          ConcurrentChangeStrategy concurrentChangeStrategy = default,
+                                          ReadonlySignalConfigurationDelegate<T>? configuration = null)
+    {
+        func = func.TraceWhenExecuting(out var isExecuting);
+        return AsyncComputedObservable(func, startValue, fallbackValue, concurrentChangeStrategy).ToAsyncLinkedSignal(isExecuting, configuration!);
+    }
+
     public Effect Effect(Action onChange, TimeProvider? scheduler)
     {
         return new Effect(() =>

@@ -5,7 +5,7 @@ using SignalsDotnet.Internals.Helpers;
 
 namespace SignalsDotnet.Internals;
 
-internal class FromObservableSignal<T> : IReadOnlySignal<T>, IEquatable<FromObservableSignal<T?>>
+internal class FromObservableSignal<T> : ISignal<T>, IEquatable<FromObservableSignal<T?>>
 {
     readonly ReadonlySignalConfiguration<T?> _configuration;
     readonly Subject<Unit> _someoneAskedValueSubject = new(); // lock
@@ -52,7 +52,7 @@ internal class FromObservableSignal<T> : IReadOnlySignal<T>, IEquatable<FromObse
             NotifySomeoneAskedAValue();
             return Signal.GetValue(this, in _value);
         }
-        private set
+        set
         {
             if (EqualityComparer<T>.Default.Equals(_value, value))
                 return;
@@ -121,7 +121,7 @@ internal class FromObservableSignal<T> : IReadOnlySignal<T>, IEquatable<FromObse
     Observable<Unit> IReadOnlySignal.FutureValues => this.OnPropertyChangedAsUnit(true);
 }
 
-internal class FromObservableAsyncSignal<T> : FromObservableSignal<T>, IAsyncReadOnlySignal<T>
+internal class FromObservableAsyncSignal<T> : FromObservableSignal<T>, IAsyncSignal<T>
 {
     public FromObservableAsyncSignal(Observable<T> observable,
                                      IReadOnlySignal<bool> isExecuting,

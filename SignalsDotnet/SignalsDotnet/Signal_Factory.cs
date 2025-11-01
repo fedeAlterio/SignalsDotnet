@@ -42,6 +42,19 @@ public static class SignalFactoryExtensions
         return new FromObservableSignal<T>(@this, configurator);
     }
 
+    public static ISignal<T> ToLinkedSignal<T>(this Observable<T> @this, 
+                                               ReadonlySignalConfigurationDelegate<T?>? configurator = null)
+    {
+        return new FromObservableSignal<T>(@this, configurator);
+    }
+
+    internal static IAsyncSignal<T> ToAsyncLinkedSignal<T>(this Observable<T> @this,
+                                                           IReadOnlySignal<bool> isExecuting, 
+                                                           ReadonlySignalConfigurationDelegate<T?>? configurator = null)
+    {
+        return new FromObservableAsyncSignal<T>(@this, isExecuting, configurator);
+    }
+
     internal static IAsyncReadOnlySignal<T> ToAsyncSignal<T>(this Observable<T> @this,
                                                             IReadOnlySignal<bool> isExecuting,
                                                             ReadonlySignalConfigurationDelegate<T?>? configurator = null)
