@@ -1,32 +1,94 @@
 <img src="./assets/demo.gif"/>
 
+# SignalsDotnet
 
-# Nuget https://www.nuget.org/packages/SignalsDotnet
+[![NuGet](https://img.shields.io/nuget/v/SignalsDotnet.svg)](https://www.nuget.org/packages/SignalsDotnet)
+[![License](https://img.shields.io/github/license/fedeAlterio/SignalsDotnet)](LICENSE)
 
-# Angular Signals for .Net
-This library is a porting of the Angular Signals in the .Net World, adapted to the .Net MVVM UI Frameworks and based on [R3](https://github.com/Cysharp/R3) (variant of ReactiveX).
-If you need an introduction to what a signal is, try to see: https://angular.io/guide/signals.
+## Angular Signals for .NET
+This library is a port of Angular Signals to the .NET world, adapted for .NET MVVM UI frameworks and built on top of [R3](https://github.com/Cysharp/R3) (a variant of ReactiveX).
+
+If you need an introduction to what signals are, see: https://angular.io/guide/signals
+
+**Current Version:** 2.0.6  
+
+## Table of Contents
+
+- [Get Started](#get-started)
+- [Core Concepts](#core-concepts)
+- [Basic Examples](#basic-examples)
+- [Signal Types](#signal-types)
+  - [Signal&lt;T&gt;](#signalt)
+  - [CollectionSignal&lt;T&gt;](#collectionsignalt)
+  - [Factory Methods](#factory-methods)
+- [Computed Signals & Linked Signals](#computed-signals--linked-signals)
+  - [Creating Computed Signals](#creating-computed-signals)
+  - [Linked Signals](#linked-signals)
+  - [Async Computed Signals](#async-computed-signals)
+  - [Using ComputedSignalFactory](#using-computedsignalfactory)
+  - [ConcurrentChangeStrategy](#concurrentchangestrategy)
+  - [How it Works](#how-it-works)
+- [Effects](#effects)
+  - [Synchronous Effects](#synchronous-effects)
+  - [Asynchronous Effects](#asynchronous-effects)
+  - [Atomic Operations](#atomic-operations)
+  - [Custom Schedulers](#custom-schedulers)
+- [Advanced Features](#advanced-features)
+  - [Untracked](#untracked)
+  - [Signal Events](#signal-events)
+  - [WhenAnyChanged](#whenanychanged)
+  - [CancellationSignal](#cancellationsignal)
+
+---
 
 # Get Started
-It is really easy to get started. What you need to do is to replace all binded ViewModel Properties and ObservableCollections to Signals:
 
-## Example 1
+It is really easy to get started. Replace all bound ViewModel properties and ObservableCollections with Signals to get automatic change tracking and reactive updates.
+
+## Core Concepts
+
+### Signal Types
+
+- **`Signal<T>`** - A writable signal that holds a value of type T
+- **`IReadOnlySignal<T>`** - A read-only signal (computed or readonly)
+- **`IAsyncReadOnlySignal<T>`** - A read-only signal with async computation
+- **`ISignal<T>`** - A writable signal interface (linked signals)
+- **`IAsyncSignal<T>`** - A writable signal with async computation
+- **`CollectionSignal<T>`** - A signal wrapping an ObservableCollection
+
+### Key Features
+
+✅ **Multi-Platform** - Works with MAUI, WPF, Avalonia, Uno Platform, Blazor, Unity, Godot, and other .NET frameworks  
+✅ **Automatic Dependency Tracking** - Signals automatically track their dependencies  
+✅ **Computed Signals** - Derive values from other signals automatically  
+✅ **Async Support** - Full support for asynchronous computations with cancellation  
+✅ **Collection Signals** - Specialized signals that support ObservableCollections  
+✅ **Effects** - Run side effects when signals change  
+✅ **Signal Events** - Events that will cause computed signals to recompute  
+✅ **Full Rx Power** - Signals are Observables, giving you access to the entire R3/ReactiveX ecosystem  
+✅ **Memory Efficient** - Support Weak subscriptions to prevent memory leaks
+
+---
+
+## Basic Examples
+
+### Example 1: Simple Login Form
 ```c#
- public class LoginViewModel
- {
-     public LoginViewModel()
-     {
-         CanLogin = Signal.Computed(() => !string.IsNullOrWhiteSpace(Username.Value) && !string.IsNullOrWhiteSpace(Password.Value));
-         LoginCommand = new DelegateCommand(Login, () => CanLogin.Value).RaiseCanExecuteChangedAutomatically();
-     }
+public class LoginViewModel
+{
+    public LoginViewModel()
+    {
+        CanLogin = Signal.Computed(() => !string.IsNullOrWhiteSpace(Username.Value) && !string.IsNullOrWhiteSpace(Password.Value));
+        LoginCommand = new DelegateCommand(Login, () => CanLogin.Value).RaiseCanExecuteChangedAutomatically();
+    }
 
-     public Signal<string> Username { get; } = new();
-     public Signal<string> Password { get; } = new();
-     public IReadOnlySignal<bool> CanLogin { get; }
+    public Signal<string> Username { get; } = new();
+    public Signal<string> Password { get; } = new();
+    public IReadOnlySignal<bool> CanLogin { get; }
 
-     public ICommand LoginCommand { get; }
-     public void Login() { /* Login */ }
- }
+    public ICommand LoginCommand { get; }
+    public void Login() { /* Login */ }
+}
 
 public static class DelegateCommandExtensions
 {
@@ -41,28 +103,29 @@ public static class DelegateCommandExtensions
 }
 ```
 
-## Example 2
+### Example 2: Async Validation with Computed Factory
 ```c#
 public class LoginViewModel
 {
     // Value set from outside.
     public Signal<bool> IsDeactivated { get; } = new(false);
+    
     public LoginViewModel()
     {      
         var computedFactory = ComputedSignalFactory.Default
-                                                   .DisconnectEverythingWhen(isDeactivated.Values)
-                                                   .OnException(exception =>
-                                                   {
-                                                       /* log or do something with it */
-                                                   });
+            .DisconnectEverythingWhen(IsDeactivated.Values)
+            .OnException(exception =>
+            {
+                /* log or do something with it */
+            });
 
-        // Will be cancelled on deactivation, of if the username signal changes during the await
-        IsUsernameValid = computedFactory.AsyncComputed(async cancellationToken => await IsUsernameValidAsync(Username.Value, cancellationToken),
-                                                        false, 
-                                                        ConcurrentChangeStrategy.CancelCurrent);
+        // Will be cancelled on deactivation, or if the username signal changes during the await
+        IsUsernameValid = computedFactory.AsyncComputed(
+            async cancellationToken => await IsUsernameValidAsync(Username.Value, cancellationToken),
+            false, 
+            ConcurrentChangeStrategy.CancelCurrent);
 
-        
-        // async computed signals have a (sync) signal that notifies us when the async computation is running
+        // Async computed signals have a (sync) signal that notifies us when the async computation is running
         CanLogin = computedFactory.Computed(() => !IsUsernameValid.IsComputing.Value
                                                   && IsUsernameValid.Value
                                                   && !string.IsNullOrWhiteSpace(Password.Value));
@@ -77,8 +140,6 @@ public class LoginViewModel
         })!;
     }
 
-    public ViewModelActivator Activator { get; } = new();
-    public ReactiveCommand<Unit, Unit> LoginCommand { get; }
     public Signal<string?> Username { get; } = new("");
     public Signal<string> Password { get; } = new("");
     public IAsyncReadOnlySignal<bool> IsUsernameValid { get; }
@@ -91,6 +152,7 @@ public class LoginViewModel
         await Task.Delay(3000, cancellationToken);
         return username?.Length > 2;
     }
+    
     void UpdateApiCalls()
     {
         var isComputingUsername = IsUsernameValid.IsComputing.Value;
@@ -117,158 +179,371 @@ public class ApiCall(DateTime startedAt)
 }
 ```
 
-
-## Example 3
+### Example 3: Deep Reactive Collections
 ```c#
 public class YoungestPersonViewModel
 {
-    public YoungestPersonViewModel()
-    {
-        YoungestPerson = Signal.Computed(() =>
-        {
-            var people = from city in Cities.Value.EmptyIfNull()
-                         from house in city.Houses.Value.EmptyIfNull()
-                         from room in house.Roooms.Value.EmptyIfNull()
-                         from person in room.People.Value.EmptyIfNull()
-                         select new PersonCoordinates(person, room, house, city);
+    public YoungestPersonViewModel()
+    {
+        YoungestPerson = Signal.Computed(() =>
+        {
+            var people = from city in Cities.Value.EmptyIfNull()
+                         from house in city.Houses.Value.EmptyIfNull()
+                         from room in house.Rooms.Value.EmptyIfNull()
+                         from person in room.People.Value.EmptyIfNull()
+                         select new PersonCoordinates(person, room, house, city);
 
-            var youngestPerson = people.DefaultIfEmpty()
-                                       .MinBy(x => x?.Person.Age.Value);
-            return youngestPerson;
-        });
-    }
+            var youngestPerson = people.DefaultIfEmpty()
+                                       .MinBy(x => x?.Person.Age.Value);
+            return youngestPerson;
+        });
+    }
 
-    public IReadOnlySignal<PersonCoordinates?> YoungestPerson { get; }
-    public CollectionSignal<ObservableCollection<City>> Cities { get; } = new();
+    public IReadOnlySignal<PersonCoordinates?> YoungestPerson { get; }
+    public CollectionSignal<ObservableCollection<City>> Cities { get; } = new();
 }
 
 public class Person
 {
-    public Signal<int> Age { get; } = new();
+    public Signal<int> Age { get; } = new();
 }
 
 public class Room
 {
-    public CollectionSignal<ObservableCollection<Person>> People { get; } = new();
+    public CollectionSignal<ObservableCollection<Person>> People { get; } = new();
 }
 
 public class House
 {
-    public CollectionSignal<ObservableCollection<Room>> Roooms { get; } = new();
+    public CollectionSignal<ObservableCollection<Room>> Rooms { get; } = new();
 }
 
 public class City
 {
-    public CollectionSignal<ObservableCollection<House>> Houses { get; } = new();
+    public CollectionSignal<ObservableCollection<House>> Houses { get; } = new();
 }
 
 public record PersonCoordinates(Person Person, Room Room, House House, City City);
 ```
-Every signal has a property `Values` that is an Observable and notifies us whenever the signal changes. 
-## `Signal<T>`
+
+---
+
+## Signal Types
+
+Every signal has a `Values` property that is an `Observable<T>` and notifies whenever the signal changes. Signals also provide `FutureValues` which skips the current value and only notifies on future changes.
+
+### `Signal<T>`
+
+A `Signal<T>` is a writable signal wrapper around a value of type `T`. It implements `INotifyPropertyChanged` and raises the `PropertyChanged` event when its value changes.
+
 ```c#
-    public Signal<Person> Person { get; } = new();
-    public Signal<Person> Person2 { get; } = new(config => config with { Comparer = new CustomPersonEqualityComparer() });
+// Basic signal
+public Signal<Person> Person { get; } = new();
+
+// Signal with custom equality comparer
+public Signal<Person> Person2 { get; } = new(config => config with 
+{ 
+    Comparer = new CustomPersonEqualityComparer() 
+});
+
+// Signal with initial value
+public Signal<string> Username { get; } = new("initial value");
+
+// Signal that always raises PropertyChanged (even for same values)
+public Signal<int> Counter { get; } = new(config => config with 
+{ 
+    RaiseOnlyWhenChanged = false 
+});
 ```
 
-A `Signal<T>` is a wrapper around a `T`. It has a property `Value` that can be set, and that when changed raises the INotifyPropertyChanged event.
+**Configuration Options:**
+- `Comparer` - Custom `IEqualityComparer<T>` to determine when to raise PropertyChanged
+- `RaiseOnlyWhenChanged` - Whether to raise PropertyChanged only when value actually changes (default: true)
 
+### `CollectionSignal<TObservableCollection>`
 
-It is possible to specify a custom `EqualityComparer` that will be used to check if raise the `PropertyChanged` event. It is also possible to force it to raise the event everytime someone sets the property
+A `CollectionSignal<TObservableCollection>` wraps an `ObservableCollection` (or any `INotifyCollectionChanged`) and listens to both:
+1. Changes to its `Value` property
+2. Modifications within the collection itself (Add, Remove, Clear, etc.)
 
-## `CollectionSignal<TObservableCollection>`
+This enables deep reactive tracking - computed signals automatically update when items are added/removed or when nested properties change.
 
-A `CollectionSignal<TObservableCollection>` is a wrapper around an `ObservableCollection` (or in general something that implements the `INotifyCollectionChanged` interface). It listens to both changes of its Value Property, and modifications of the `ObservableCollection` it is wrapping
-
-
-It is possible to specify a custom `EqualityComparer` that will be used to check if raise the `PropertyChanged` event. It is also possible to force it to raise the event everytime someone sets the property
-
-
-By default, it subscribes to the `INotifyCollection` event weakly in order to avoid memory leaks, but this behavior can be customized. 
-
-
-It is also possible to Apply some Throttle-like behavior on the collection changes or more in generale map the IObservable used.
 ```c#
-// This signal notify changes whenever the collection is modified
-// ThrottleOneCycle is used to throttle notifications for one rendering cycle,
-// In that way we ensure that for example AddRange() calls over the observableCollection Will produce only 1 notification
-public CollectionSignal<ObservableCollection<Person>> People { get; } = new(collectionChangedConfiguration: config => config.ThrottleOneCycle(UIReactiveScheduler))
+// Basic collection signal
+public CollectionSignal<ObservableCollection<Person>> People { get; } = new();
+
+// Collection signal with throttling to batch notifications
+public CollectionSignal<ObservableCollection<Person>> People { get; } = new(
+    collectionChangedConfiguration: config => config.ThrottleOneCycle(UIReactiveScheduler)
+);
 ```
+
+**Why use throttling?** Operations like `AddRange()` trigger multiple `CollectionChanged` events. Throttling batches these into a single notification per UI frame, improving performance.
+
+**Configuration Options:**
+- `collectionChangedConfiguration` - Configure how collection change events are processed (throttling, filtering, etc.)
+- `propertyChangedConfiguration` - Configure the signal's property changed behavior
+- `SubscribeWeakly` - Whether to subscribe to collection events weakly (default: false) to prevent memory leaks
+
+### Factory Methods
+
+```c#
+// Create signals using factory methods
+var signal = Signal.Create<string>();
+var signalWithValue = Signal.Create("initial");
+
+// Convert Observable to Signal
+Observable<int> observable = /* ... */;
+IReadOnlySignal<int> signal = observable.ToSignal();
+ISignal<int> linkedSignal = observable.ToLinkedSignal();
+
+// Create collection signal from existing collection
+ObservableCollection<Person> collection = new();
+IReadOnlySignal<ObservableCollection<Person>> signal = collection.ToCollectionSignal();
+
+// Create from observable with configuration
+var signal = Observable.Interval(TimeSpan.FromSeconds(1))
+                       .ToSignal(config => config with { RaiseOnlyWhenChanged = false });
+```
+
+---
 
 ## Computed Signals & Linked Signals
+
+Computed signals automatically derive their values from other signals. They track dependencies automatically and recompute when any dependency changes.
+
+### Creating Computed Signals
+
 ```c#
- public LoginViewModel()
- {
-     IObservable<bool> isDeactivated = this.IsDeactivated();
+var firstName = new Signal<string>("John");
+var lastName = new Signal<string>("Doe");
 
-     var computedFactory = ComputedSignalFactory.Default
-                                                .DisconnectEverythingWhen(isDeactivated)
-                                                .OnException(exception =>
-                                                {
-                                                    /* log or do something with it */
-                                                });
+// Automatically updates when firstName or lastName changes
+var fullName = Signal.Computed(() => $"{firstName.Value} {lastName.Value}");
 
-     IsUsernameValid = computedFactory.AsyncComputed(async cancellationToken => await IsUsernameValidAsync(Username.Value, cancellationToken),
-                                                     false, 
-                                                     ConcurrentChangeStrategy.CancelCurrent);
-
-     
-     CanLogin = computedFactory.Computed(() => !IsUsernameValid.IsComputing.Value
-                                               && IsUsernameValid.Value
-                                               && !string.IsNullOrWhiteSpace(Password.Value));
- }
+Console.WriteLine(fullName.Value); // "John Doe"
+firstName.Value = "Jane";
+Console.WriteLine(fullName.Value); // "Jane Doe"
 ```
-A computed signal, is a signal that depends by other signals. 
 
-Basically to create it you need to pass a function that computes the value. That function can be synchronous or asynchronous. A Linked Signal is a computed signal that can also be manually written to, so basically everything that applies to Computed is also valid to Linked signals.
+### Linked Signals
 
-It automatically recognize which are the signals it depends by, and listen for them to change. Whenever a signal changes, the function is executed again, and a new value is produced (the `INotifyPropertyChanged` is raised).
+Linked signals are computed signals that can also be manually written to:
 
-It is possible to specify whether or not to subscribe weakly, or strongly (default option). It is possible also here to specify a custom `EqualityComparer`.
+```c#
+var source = new Signal<int>(10);
+var linked = Signal.Linked(() => source.Value * 2);
 
-Usually you want to stop all asynchronous computation according to some boolean condition.
-This can be easily done via `ComputedSignalFactory.DisconnectEverythingWhen(isDeactivated)`. Whenever the isDeactivated observable notfies `true`, every pending async computation will be cancelled. Later on, when it notifies a `false`, all the computed signals will be recomputed again. 
+Console.WriteLine(linked.Value); // 20
 
-You can find useful also `CancellationSignal.Create(booleanObservable)`, that converts a boolean observable into a `IReadOnlySignal<CancellationToken>`, that automatically creates, cancels and disposes new cancellation tokens according to a boolean observable.
+// Can be manually overridden
+linked.Value = 100;
+Console.WriteLine(linked.Value); // 100
 
-## ConcurrentChangeStrategy
-In an async computed signal, the signals it depends by can be changed while the computation function is running. You can use the enum `ConcurrentChangeStrategy` to specify what you want to do in that cases. For now there are 2 options:
+// Automatically recomputes when source changes
+source.Value = 5;
+Console.WriteLine(linked.Value); // 10
+```
 
-- `ConcurrentChangeStrategy.CancelCurrent`: The current cancellationToken will be cancelled, and a new computation will start immediately
+### Async Computed Signals
 
-- `ConcurrentChangeStrategy.ScheduleNext`: The current cancellationToken will NOT be cancelled, and a new computation will be queued up immediately after the current. Note that only 1 computation can be queued up at most. So using this option, multiple concurrent changes are equivalent to a single concurrent change.
+```c#
+var username = new Signal<string>();
 
-Note also that what already said about `DisconnectEverythingWhen` method is independent from that `ConcurrentChangeStrategy` enum. So in both cases, when the disconnection notification arrive, the async computation will be cancelled.
+var isUsernameValid = Signal.AsyncComputed(
+    async cancellationToken => 
+    {
+        var user = username.Value;
+        return await ValidateUsernameAsync(user, cancellationToken);
+    },
+    defaultValue: false,
+    ConcurrentChangeStrategy.CancelCurrent
+);
 
-### How it works?
+// Check if computation is running
+if (isUsernameValid.IsComputing.Value)
+{
+    Console.WriteLine("Validating...");
+}
+```
 
-Basically the getter (not the setter!) of the Signals property Value raises a static event that notifies someone just requested that signal. 
+### Using ComputedSignalFactory
 
-This is used by the Computed signal before executing the computation function.
+For more control over computed signals, use `ComputedSignalFactory`:
 
-The computed signals register to that event (filtering out notifications of other signals, using some async locals state), and in that way they know, when the function returns, what are the signals that have been just accessed.
+```c#
+public class LoginViewModel
+{
+    public Signal<bool> IsDeactivated { get; } = new(false);
 
-At this point it subscribes to the changes of all those signals in order to know when it should recompute again the value. 
+    public LoginViewModel()
+    {      
+        var computedFactory = ComputedSignalFactory.Default
+            .DisconnectEverythingWhen(IsDeactivated.Values)
+            .OnException(exception =>
+            {
+                Logger.LogError(exception, "Computation error");
+            });
 
-When any signal changes, it repeats the same reasoning and tracks what signals are accessed before recomputing the next value (etc.)
+        // All signals created from this factory will be cancelled when IsDeactivated is true
+        IsUsernameValid = computedFactory.AsyncComputed(
+            async cancellationToken => await IsUsernameValidAsync(Username.Value, cancellationToken),
+            false, 
+            ConcurrentChangeStrategy.CancelCurrent
+        );
 
-## Untracked
+        CanLogin = computedFactory.Computed(() => 
+            !IsUsernameValid.IsComputing.Value &&
+            IsUsernameValid.Value &&
+            !string.IsNullOrWhiteSpace(Password.Value)
+        );
 
-To shutdown the automatical tracking of signals changes in computed signals it is possible to use `Signal.Untracked` or the equivalent properties shortcuts
+        // Effects are also created from the factory
+        computedFactory.Effect(UpdateApiCalls);
+    }
+
+    public Signal<string?> Username { get; } = new();
+    public Signal<string> Password { get; } = new();
+    public IAsyncReadOnlySignal<bool> IsUsernameValid { get; }
+    public IReadOnlySignal<bool> CanLogin { get; }
+
+    async Task<bool> IsUsernameValidAsync(string? username, CancellationToken cancellationToken)
+    {
+        await Task.Delay(3000, cancellationToken);
+        return username?.Length > 2;
+    }
+
+    void UpdateApiCalls()
+    {
+        // Effect logic here
+    }
+}
+```
+
+### ConcurrentChangeStrategy
+
+In an async computed signal, dependencies can change while the computation function is running. Use `ConcurrentChangeStrategy` to control this behavior:
+
+- **`ConcurrentChangeStrategy.CancelCurrent`** - Cancels the current computation and starts a new one immediately
+- **`ConcurrentChangeStrategy.ScheduleNext`** - Queues the next computation to run after the current one completes (max 1 queued)
+
+Both strategies respect the `DisconnectEverythingWhen` cancellation.
+
+### How it Works
+
+Computed signals use automatic dependency tracking:
+
+1. Before executing the computation function, the signal subscribes to a tracking event
+2. When any signal's `Value` getter is called, it notifies the tracker
+3. The computed signal subscribes to all accessed signals
+4. When any dependency changes, the computation reruns and tracks dependencies again
+
+This dynamic tracking means computed signals only subscribe to signals that are actually accessed in each execution.
+
+---
+
+## Effects
+
+Effects are reactive side effects that automatically track signal dependencies and re-run when any dependency changes. They are similar to computed signals but are used for side effects instead of computing values.
+
+### Synchronous Effects
+```c#
+public class ViewModel
+{
+    public Signal<int> Counter { get; } = new();
+    
+    public ViewModel()
+    {
+        // Effect runs immediately and re-runs whenever Counter changes
+        var effect = new Effect(() => 
+        {
+            Console.WriteLine($"Counter value: {Counter.Value}");
+        });
+    }
+}
+```
+
+### Asynchronous Effects
+```c#
+public class ViewModel
+{
+    public Signal<string> SearchTerm { get; } = new();
+    
+    public ViewModel()
+    {
+        var effect = new Effect(async cancellationToken =>
+        {
+            var term = SearchTerm.Value;
+            await SearchAsync(term, cancellationToken);
+        }, ConcurrentChangeStrategy.CancelCurrent);
+    }
+}
+```
+
+### Atomic Operations
+
+Effects can be batched using atomic operations to prevent multiple executions during complex updates:
+
+```c#
+Effect.AtomicOperation(() =>
+{
+    signal1.Value = 1;
+    signal2.Value = 2;
+    signal3.Value = 3;
+    // Effect runs only once after all changes
+});
+
+// Async version
+await Effect.AtomicOperationAsync(async () =>
+{
+    await Task.Yield();
+    signal1.Value = 1;
+    await Task.Yield();
+    signal2.Value = 2;
+    // Effect runs only once after all changes
+});
+```
+
+### Custom Schedulers
+
+You can specify a custom scheduler for effect execution:
+
+```c#
+var scheduler = TimeProvider.System;
+var effect = new Effect(() => 
+{
+    // This will be scheduled on the specified scheduler
+    DoSomething();
+}, scheduler);
+```
+
+---
+
+## Advanced Features
+
+### Untracked
+
+To disable automatic tracking of signal changes in computed signals, use `Signal.Untracked()` or the equivalent property shortcuts:
+
 ```c#
 public class LoginViewModel
 {
    public LoginViewModel()
    {
+       // Using Untracked() method
        CanLogin = Signal.Computed(() =>
        {
-           return !string.IsNullOrWhiteSpace(Username.Value) && Signal.Untracked(() => !string.IsNullOrWhiteSpace(Password.Value));
+           return !string.IsNullOrWhiteSpace(Username.Value) && 
+                  Signal.Untracked(() => !string.IsNullOrWhiteSpace(Password.Value));
        });
        
-       CanLogin = Signal.Computed(() => !string.IsNullOrWhiteSpace(Username.Value) && !string.IsNullOrWhiteSpace(Password.UntrackedValue));
+       // Using UntrackedValue property
+       CanLogin = Signal.Computed(() => !string.IsNullOrWhiteSpace(Username.Value) && 
+                                       !string.IsNullOrWhiteSpace(Password.UntrackedValue));
 
-       var AnyPeople = Signal.Computed(() => People.UntrackedValue);
-       var AnyPeople2 = Signal.Computed(() => People.UntrackedCollectionChangedValue);
+       // For collection signals
+       var anyPeople = Signal.Computed(() => People.UntrackedValue);
+       var anyPeople2 = Signal.Computed(() => People.UntrackedCollectionChangedValue);
    }
 
    public CollectionSignal<ObservableCollection<Person>> People { get; } = new();
@@ -276,6 +551,69 @@ public class LoginViewModel
    public Signal<string> Password { get; } = new();
    public IReadOnlySignal<bool> CanLogin { get; }
 }
-
 ```
 
+### Signal Events
+
+Signal Events are signals that always notify subscribers, even when set to the same value. They're useful for event-driven scenarios:
+
+```c#
+public class ViewModel
+{
+    public ISignal<Unit> RefreshRequested { get; } = Signal.CreateEvent();
+    
+    public void RequestRefresh()
+    {
+        RefreshRequested.Invoke(); // Always triggers notification
+    }
+    
+    public ViewModel()
+    {
+        var effect = new Effect(() =>
+        {
+            RefreshRequested.Track(); // Track the event
+            // This runs every time Invoke() is called
+            PerformRefresh();
+        });
+    }
+}
+```
+
+### WhenAnyChanged
+
+Combine multiple signals into a single observable that emits whenever any of them changes:
+
+```c#
+var signal1 = new Signal<int>();
+var signal2 = new Signal<string>();
+var signal3 = new Signal<bool>();
+
+Observable<Unit> anyChanged = Signal.WhenAnyChanged(signal1, signal2, signal3);
+anyChanged.Subscribe(_ => Console.WriteLine("At least one signal changed"));
+```
+
+### CancellationSignal
+
+Convert a boolean observable into a signal that provides cancellation tokens:
+
+```c#
+Observable<bool> isDeactivated = this.IsDeactivated();
+IReadOnlySignal<CancellationToken> cancellationSignal = CancellationSignal.Create(isDeactivated);
+
+// Use the cancellation token in async operations
+await SomeAsyncOperation(cancellationSignal.Value);
+```
+
+---
+
+## License
+
+This project is licensed under the terms specified in the [LICENSE](LICENSE) file.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit issues or pull requests.
+
+## Repository
+
+GitHub: https://github.com/fedeAlterio/SignalsDotnet

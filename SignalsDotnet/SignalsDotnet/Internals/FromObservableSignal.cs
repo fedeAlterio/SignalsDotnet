@@ -54,7 +54,7 @@ internal class FromObservableSignal<T> : ISignal<T>, IEquatable<FromObservableSi
         }
         set
         {
-            if (EqualityComparer<T>.Default.Equals(_value, value))
+            if (_configuration.RaiseOnlyWhenChanged && EqualityComparer<T>.Default.Equals(_value, value))
                 return;
 
             _value = value;

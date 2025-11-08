@@ -5,7 +5,7 @@ using SignalsDotnet.Internals.Helpers;
 
 namespace SignalsDotnet;
 
-public class Signal<T> : IReadOnlySignal<T>, IEquatable<Signal<T>>
+public class Signal<T> : ISignal<T>, IEquatable<Signal<T>>
 {
     readonly SignalConfiguration<T> _configuration;
     public Signal(SignalConfigurationDelegate<T?>? configurator = null) : this(default!, configurator!)
@@ -29,7 +29,7 @@ public class Signal<T> : IReadOnlySignal<T>, IEquatable<Signal<T>>
         get => Signal.GetValue(this, in _value);
         set
         {
-            if (EqualityComparer<T>.Default.Equals(_value, value))
+            if (_configuration.RaiseOnlyWhenChanged && EqualityComparer<T>.Default.Equals(_value, value))
                 return;
 
             _value = value;

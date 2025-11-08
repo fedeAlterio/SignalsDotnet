@@ -1,4 +1,6 @@
-﻿namespace SignalsDotnet.Internals.Helpers;
+﻿using R3;
+
+namespace SignalsDotnet.Internals.Helpers;
 
 internal static class GenericHelpers
 {
@@ -11,6 +13,19 @@ internal static class GenericHelpers
         {
             token.ThrowIfCancellationRequested();
             return ValueTask.FromResult(func());
+        };
+    }
+
+    public static Func<CancellationToken, ValueTask<Unit>> ToAsyncValueTask(this Action action)
+    {
+        if (action is null)
+            throw new ArgumentNullException(nameof(action));
+
+        return token =>
+        {
+            token.ThrowIfCancellationRequested();
+            action();
+            return ValueTask.FromResult(Unit.Default);
         };
     }
 
