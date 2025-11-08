@@ -10,7 +10,7 @@ This library is a port of Angular Signals to the .NET world, adapted for .NET MV
 
 If you need an introduction to what signals are, see: https://angular.io/guide/signals
 
-**Current Version:** 2.0.5  
+**Current Version:** 2.0.6  
 **Target Framework:** .NET 8.0
 
 ## Table of Contents
@@ -66,7 +66,7 @@ It is really easy to get started. Replace all bound ViewModel properties and Obs
 ✅ **Collection Signals** - Specialized signals that support ObservableCollections 
 ✅ **Effects** - Run side effects when signals change  
 ✅ **Signal Events** - Events that will cause computed signals to recompute  
-✅ **Full Rx Power** - Signals are Observables, giving you access to the entire R3/ReactiveX ecosystem  
+✅ **Full Rx Power** - Signals are Observables, giving you access to the entire R3/ReactiveX ecosystem 
 ✅ **Memory Efficient** - Support Weak subscriptions to prevent memory leaks
 
 ---
