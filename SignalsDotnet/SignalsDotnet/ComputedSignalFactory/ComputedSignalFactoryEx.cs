@@ -27,6 +27,15 @@ public static class ComputedSignalFactoryEx
         return @this.Computed(func, static () => default, configuration);
     }
 
+    public static IReadOnlySignal<Unit> Computed(this IComputedSignalFactory @this, Action action)
+    {
+        return @this.Computed(() =>
+        {
+            action();
+            return Unit.Default;
+        }, static () => Optional<Unit>.Empty , config => config with { RaiseOnlyWhenChanged = false });
+    }
+
     public static IAsyncReadOnlySignal<T> AsyncComputed<T>(this IComputedSignalFactory @this,
                                                          Func<CancellationToken, ValueTask<T>> func,
                                                          T startValue,
@@ -35,6 +44,17 @@ public static class ComputedSignalFactoryEx
                                                          ReadonlySignalConfigurationDelegate<T>? configuration = null)
     {
         return @this.AsyncComputed(func, startValue, () => new Optional<T>(fallbackValue()), concurrentChangeStrategy, configuration);
+    }
+
+    public static IAsyncReadOnlySignal<Unit> AsyncComputed(this IComputedSignalFactory @this,
+                                                           Func<CancellationToken, ValueTask> action,
+                                                           ConcurrentChangeStrategy concurrentChangeStrategy = default)
+    {
+        return @this.AsyncComputed(async token =>
+        {
+            await action(token);
+            return Unit.Default;
+        }, Unit.Default, static () => Optional<Unit>.Empty, concurrentChangeStrategy, config => config with{RaiseOnlyWhenChanged = false});
     }
 
     public static IAsyncReadOnlySignal<T> AsyncComputed<T>(this IComputedSignalFactory @this,

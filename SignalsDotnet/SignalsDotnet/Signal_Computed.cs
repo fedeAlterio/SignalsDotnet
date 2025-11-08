@@ -23,6 +23,11 @@ public partial class Signal
         return Computed(func.ToAsyncValueTask(), default, static () => Optional<T>.Empty, default, configuration);
     }
 
+    public static IReadOnlySignal<Unit> Computed(Action action)
+    {
+        return Computed(action.ToAsyncValueTask(), default, static () => Optional<Unit>.Empty, default, config => config with { RaiseOnlyWhenChanged = false });
+    }
+
     public static Observable<T> ComputedObservable<T>(Func<T> func,
                                                        Func<Optional<T>> fallbackValue)
     {
