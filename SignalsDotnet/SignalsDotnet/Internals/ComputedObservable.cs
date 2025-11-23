@@ -34,9 +34,9 @@ internal class ComputedObservable<T> : Observable<T>
             _observable = observable;
             _observer = observer;
             Observable.FromAsync(ComputeResult)
-                        .Take(1)
-                        .TakeUntil(_disposed.Where(x => x))
-                        .Subscribe(OnNewResult);
+                      .Take(1)
+                      .TakeUntil(_disposed.Where(x => x))
+                      .Subscribe(OnNewResult);
         }
 
         void OnNewResult(ComputationResult result)
@@ -74,33 +74,46 @@ internal class ComputedObservable<T> : Observable<T>
             var referenceEquality = ReferenceEqualityComparer.Instance;
             HashSet<IReadOnlySignal> signalRequested = new(referenceEquality);
             Optional<T> result;
-            SingleNotificationObservable<bool> stopListeningForSignals = new();
+            var signalChanged = new SingleNotificationObservable<Unit>();
 
-            var signalChangedObservable = Signal.SignalsRequested()
-                                                .TakeUntil(stopListeningForSignals)
-                                                .Where(signalRequested.Add)
-                                                .Select(static x => x.FutureValues)
-                                                .Merge()
-                                                .Take(1);
-
+            var disconnectSubscription = new DisposableBag();
+            var signalChangeSubscription = new DisposableBag().AddTo(ref disconnectSubscription);
+            CancellationTokenSource? cts;
             if (_observable._concurrentChangeStrategy == ConcurrentChangeStrategy.CancelCurrent)
             {
-                var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 cancellationToken = cts.Token;
-                signalChangedObservable = signalChangedObservable.Do(_ => cts.Cancel())
-                                                                 .DoCancelOnCompleted(cts);
+                cts.AddTo(ref disconnectSubscription);
             }
-
-            var scheduler = _observable._scheduler;
-            if (scheduler is not null)
+            else
             {
-                signalChangedObservable = signalChangedObservable.Select(scheduler)
-                                                                 .Switch();
+                cts = null;
             }
 
-            var shouldComputeNextResult = signalChangedObservable.Replay(1);
+            int anySignalArrived = 0;
+            var signalRequestedSubscription = Signal.SignalsRequested()
+                                                    .Subscribe(signal =>
+                                                    {
+                                                        if (!signalRequested.Add(signal)) return;
 
-            var disconnect = shouldComputeNextResult.Connect();
+                                                        signal.FutureValues.Subscribe(_ =>
+                                                        {
+                                                            if (Interlocked.CompareExchange(ref anySignalArrived, 1, 0) == 1) return;
+
+                                                            signalChangeSubscription.Dispose();
+                                                            cts?.Cancel();
+                                                            var scheduler = _observable._scheduler;
+                                                            if (scheduler is not null)
+                                                            {
+                                                                scheduler(Unit.Default).Subscribe(signalChanged.SetResult)
+                                                                                       .AddTo(ref disconnectSubscription);
+                                                            }
+                                                            else
+                                                            {
+                                                                signalChanged.SetResult(Unit.Default);
+                                                            }
+                                                        }).AddTo(ref signalChangeSubscription);
+                                                    });
 
             try
             {
@@ -110,7 +123,7 @@ internal class ComputedObservable<T> : Observable<T>
                 }
                 finally
                 {
-                    stopListeningForSignals.SetResult(true);
+                    signalRequestedSubscription.Dispose();
                 }
             }
             catch (OperationCanceledException)
@@ -131,11 +144,10 @@ internal class ComputedObservable<T> : Observable<T>
                 }
             }
 
-            var resultObservable = new DisconnectOnDisposeObservable<Unit>(shouldComputeNextResult, disconnect);
+            var resultObservable = new DisconnectOnDisposeObservable<Unit>(signalChanged, disconnectSubscription);
 
             return new(resultObservable, result);
         }
-
 
         public void Dispose() => _disposed.OnNext(true);
     }
