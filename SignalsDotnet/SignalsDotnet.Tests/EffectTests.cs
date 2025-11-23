@@ -1,13 +1,15 @@
 ﻿using FluentAssertions;
 using R3;
+using SignalsDotnet.Tests.Helpers;
 
 namespace SignalsDotnet.Tests;
 
 public class EffectTests
 {
     [Fact]
-    public void ShouldRunWhenAnySignalChanges()
+    public async Task ShouldRunWhenAnySignalChanges()
     {
+        await this.SwitchToMainThread();
         var number1 = new Signal<int>();
         var number2 = new Signal<int>();
 
@@ -31,8 +33,9 @@ public class EffectTests
     }
 
     [Fact]
-    public void ShouldRunOnSpecifiedScheduler()
+    public async Task ShouldRunOnSpecifiedScheduler()
     {
+        await this.SwitchToMainThread();
         var scheduler = new TestScheduler();
         var number1 = new Signal<int>();
         var number2 = new Signal<int>();
@@ -58,8 +61,9 @@ public class EffectTests
     }
 
     [Fact]
-    public void EffectShouldNotRunMultipleTimesInASingleSchedule()
+    public async Task EffectShouldNotRunMultipleTimesInASingleSchedule()
     {
+        await this.SwitchToMainThread();
         var scheduler = new TestScheduler();
         var number1 = new Signal<int>();
         var number2 = new Signal<int>();
@@ -93,6 +97,7 @@ public class EffectTests
     [Fact]
     public async Task EffectsShouldRunAtTheEndOfAtomicOperations()
     {
+        await this.SwitchToMainThread();
         await Enumerable.Range(1, 33)
                    .Select(__ =>
                    {
@@ -137,8 +142,9 @@ public class EffectTests
     }
 
     [Fact]
-    public void EffectsShouldRunAtTheEndOfAtomicOperationsWithScheduler()
+    public async Task EffectsShouldRunAtTheEndOfAtomicOperationsWithScheduler()
     {
+        await this.SwitchToMainThread();
         var scheduler = new TestScheduler();
         var number1 = new Signal<int>();
         var number2 = new Signal<int>();
