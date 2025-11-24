@@ -1,6 +1,6 @@
-﻿using System.Runtime.CompilerServices;
+﻿using R3;
 using SignalsDotnet.Helpers;
-using R3;
+using System.Runtime.CompilerServices;
 
 namespace SignalsDotnet.Internals;
 
@@ -29,6 +29,7 @@ internal class ComputedObservable<T> : Observable<T>
         readonly ComputedObservable<T> _observable;
         readonly Observer<T> _observer;
         readonly CancellationTokenSource _disposed = new();
+        DisposableBag _disconnectSubscription;
 
         public Subscription(ComputedObservable<T> observable, Observer<T> observer)
         {
@@ -41,15 +42,28 @@ internal class ComputedObservable<T> : Observable<T>
         {
             try
             {
-                var token = _disposed.Token;
-                while (!token.IsCancellationRequested)
+                try
                 {
-                    var result = await ComputeResult(_disposed.Token);
-                    if (result.ResultOptional.TryGetValue(out var propertyValue))
+                    var token = _disposed.Token;
+                    while (!token.IsCancellationRequested)
                     {
-                        _observer.OnNext(propertyValue);
+                        var result = await ComputeResult(_disposed.Token);
+                        if (token.IsCancellationRequested) return;
+
+                        if (result.ResultOptional.TryGetValue(out var propertyValue))
+                        {
+                            _observer.OnNext(propertyValue);
+                        }
+
+                        await using var _ = token.Register(static x => ((SyncCompletionSource)x!).SetCompleted(Unit.Default), result.SignalChangedAwaitable);
+                        await result.SignalChangedAwaitable;
+                        _disconnectSubscription.Dispose();
                     }
-                    await result.ShouldComputeNextResult;
+                }
+                finally
+                {
+                    // It's okay "double" dispose it
+                    _disconnectSubscription.Dispose();
                 }
             }
             catch
@@ -64,15 +78,15 @@ internal class ComputedObservable<T> : Observable<T>
             HashSet<IReadOnlySignal> signalRequested = new(referenceEquality);
             Optional<T> result;
 
-            var disconnectSubscription = new DisposableBag();
-            var signalChangeSubscription = new DisposableBag().AddTo(ref disconnectSubscription);
-            var signalChangedAwaitable = new DisconnectOnCompletionAwaitable(disconnectSubscription);
+            _disconnectSubscription = new();
+            var signalChangeSubscription = new DisposableBag().AddTo(ref _disconnectSubscription);
+            var signalChangedAwaitable = new SyncCompletionSource();
             CancellationTokenSource? cts;
             if (_observable._concurrentChangeStrategy == ConcurrentChangeStrategy.CancelCurrent)
             {
                 cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 cancellationToken = cts.Token;
-                cts.AddTo(ref disconnectSubscription);
+                cts.AddTo(ref _disconnectSubscription);
             }
             else
             {
@@ -95,7 +109,7 @@ internal class ComputedObservable<T> : Observable<T>
                                                             if (scheduler is not null)
                                                             {
                                                                 scheduler(Unit.Default).Subscribe(signalChangedAwaitable.SetCompleted)
-                                                                                       .AddTo(ref disconnectSubscription);
+                                                                                       .AddTo(ref _disconnectSubscription);
                                                             }
                                                             else
                                                             {
@@ -145,73 +159,28 @@ internal class ComputedObservable<T> : Observable<T>
         }
     }
 
-    record struct ComputationResult(DisconnectOnCompletionAwaitable ShouldComputeNextResult, Optional<T> ResultOptional);
-    class DisconnectOnCompletionAwaitable(IDisposable disposable) : INotifyCompletion
+    record struct ComputationResult(SyncCompletionSource SignalChangedAwaitable, Optional<T> ResultOptional);
+    class SyncCompletionSource : INotifyCompletion
     {
-        readonly IDisposable _disposable = disposable;
         Action? _continuation;
-
-        public DisconnectOnCompletionAwaitable GetAwaiter() => this;
+        public SyncCompletionSource GetAwaiter() => this;
         public bool IsCompleted => ReferenceEquals(Volatile.Read(ref _continuation), ActionStub.Nop);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void OnCompleted(Action continuation)
         {
             Action? original = Interlocked.CompareExchange(ref _continuation, continuation, null);
-            if (original is null) return; // Normal case
+            if (original is null) return; 
             if (ReferenceEquals(original, ActionStub.Nop))
-                continuation(); // Rare case
+                continuation(); 
             else
                 throw new InvalidOperationException("Double await");
         }
 
-        public void GetResult() => _disposable.Dispose();
+        public void GetResult() {}
 
-        public void SetCompleted(Unit unit)
-        {
-            Interlocked.Exchange(ref _continuation, ActionStub.Nop)?.Invoke();
-        }
-    }
-
-    class SingleNotificationObservable<TNotification> : Observable<TNotification>, IDisposable
-    {
-        Observer<TNotification>? _observer;
-        readonly object _locker = new();
-        Optional<TNotification> _value;
-
-        protected override IDisposable SubscribeCore(Observer<TNotification> observer)
-        {
-            lock (_locker)
-            {
-                if (_value.TryGetValue(out var value))
-                {
-                    observer.OnNext(value);
-                    observer.OnCompleted();
-                }
-                else
-                {
-                    _observer = observer;
-                }
-
-                return this;
-            }
-        }
-
-        public void SetResult(TNotification value)
-        {
-            lock (this)
-            {
-                var observer = _observer;
-                if (observer is not null)
-                {
-                    observer.OnNext(value);
-                    observer.OnCompleted();
-                    return;
-                }
-
-                _value = new(value);
-            }
-        }
-
-        public void Dispose() => Interlocked.Exchange(ref _observer, null);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetCompleted(Unit unit) => Interlocked.Exchange(ref _continuation, ActionStub.Nop)?.Invoke();
     }
 }
 
