@@ -1,5 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.ComponentModel;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using R3;
 
 namespace SignalsDotnet;
@@ -8,7 +10,7 @@ public static partial class Signal
 {
     static uint _nextComputedSignalAffinityValue;
     static readonly AsyncLocal<uint> _computedSignalAffinityValue = new();
-    static readonly ConcurrentDictionary<uint, Subject<IReadOnlySignal>> _signalRequestedByComputedAffinity = new();
+    static readonly Dictionary<uint, Subject<IReadOnlySignal>> _signalRequestedByComputedAffinity = new();
     internal static readonly PropertyChangedEventArgs PropertyChangedArgs = new("Value");
 
     internal static Observable<IReadOnlySignal> SignalsRequested()
@@ -99,16 +101,21 @@ public static partial class Signal
             lock (_computedSignalAffinityValue)
             {
                 var affinityValue = _nextComputedSignalAffinityValue;
-
                 unchecked
                 {
                     _nextComputedSignalAffinityValue++;
                 }
 
                 _computedSignalAffinityValue.Value = affinityValue;
-                var subject = new Subject<IReadOnlySignal>();
-                _signalRequestedByComputedAffinity.TryAdd(affinityValue, subject);
 
+                ref var subjectRef = ref CollectionsMarshal.GetValueRefOrAddDefault(_signalRequestedByComputedAffinity, affinityValue, out bool exists);
+                if (exists)
+                {
+                    return Disposable.Empty;
+                }
+
+                var subject = new Subject<IReadOnlySignal>();
+                subjectRef = subject;
                 subject.Subscribe(observer.OnNext, observer.OnErrorResume, observer.OnCompleted);
                 return new SignalsRequestedDisposable(affinityValue, subject);
             }
@@ -127,7 +134,11 @@ public static partial class Signal
         }
         public void Dispose()
         {
-            _signalRequestedByComputedAffinity.TryRemove(_affinityValue, out _);
+            lock (_computedSignalAffinityValue)
+            {
+                _signalRequestedByComputedAffinity.Remove(_affinityValue, out _);
+
+            }
             _subject.Dispose();
         }
     }

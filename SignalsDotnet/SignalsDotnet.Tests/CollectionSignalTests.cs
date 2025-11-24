@@ -1,14 +1,16 @@
-﻿using System.Collections.ObjectModel;
-using FluentAssertions;
+﻿using FluentAssertions;
 using R3;
+using SignalsDotnet.Tests.Helpers;
+using System.Collections.ObjectModel;
 
 namespace SignalsDotnet.Tests;
 
 public class CollectionSignalTests
 {
     [Fact]
-    public void ReactiveObservableCollection_ShouldObserve_NestedChanges()
+    public async Task ReactiveObservableCollection_ShouldObserve_NestedChanges()
     {
+        await this.SwitchToMainThread();
         var city = new City();
         bool anyNiceChair = false;
         city.AnyNiceChair.Values.Subscribe(x => anyNiceChair = x);

@@ -1,13 +1,15 @@
 ﻿using FluentAssertions;
 using R3;
+using SignalsDotnet.Tests.Helpers;
 
 namespace SignalsDotnet.Tests;
 
 public class ComputedSignalTests
 {
     [Fact]
-    public void ShouldNotifyWhenAnyChanged()
+    public async Task ShouldNotifyWhenAnyChanged()
     {
+        await this.SwitchToMainThread();
         var prop1 = new Signal<int>();
         var prop2 = new Signal<int>();
 
@@ -29,8 +31,9 @@ public class ComputedSignalTests
     }
 
     [Fact]
-    public void ShouldNotifyOnlyLatestScannedProperties()
+    public async Task ShouldNotifyOnlyLatestScannedProperties()
     {
+        await this.SwitchToMainThread();
         var number1 = new Signal<int>();
         var number2 = new Signal<int>();
         var defaultValue = new Signal<int>();
@@ -74,8 +77,9 @@ public class ComputedSignalTests
     }
 
     [Fact]
-    public void Untracked_ShouldNotTrack_SignalChanges()
+    public async Task Untracked_ShouldNotTrack_SignalChanges()
     {
+        await this.SwitchToMainThread();
         var a = new Signal<int>();
         var b = new Signal<int>();
 
@@ -94,8 +98,9 @@ public class ComputedSignalTests
     }
 
     [Fact]
-    public void UntrackedValue_ShouldNotTrack_SignalChanges()
+    public async Task UntrackedValue_ShouldNotTrack_SignalChanges()
     {
+        await this.SwitchToMainThread();
         var a = new Signal<int>();
         var b = new Signal<int>();
 
