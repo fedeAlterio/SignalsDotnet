@@ -7,8 +7,8 @@ namespace SignalsDotnet.Internals;
 
 internal class FromObservableSignal<T> : ISignal<T>, IEquatable<FromObservableSignal<T?>>
 {
+    readonly Observable<T> _observable;
     readonly ReadonlySignalConfiguration<T?> _configuration;
-    readonly Subject<Unit> _someoneAskedValueSubject = new(); // lock
     int _someoneAskedValue; // 1 means true, 0 means false
 
 #pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
@@ -16,28 +16,18 @@ internal class FromObservableSignal<T> : ISignal<T>, IEquatable<FromObservableSi
 #pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
                                 ReadonlySignalConfigurationDelegate<T?>? configuration = null)
     {
-        if (observable is null)
-            throw new ArgumentNullException(nameof(observable));
+        _observable = observable ?? throw new ArgumentNullException(nameof(observable));
 
         var options = ReadonlySignalConfiguration<T?>.Default;
         if (configuration != null)
             options = configuration(options);
 
         _configuration = options;
-
-        _someoneAskedValueSubject.Take(1)
-                                 .Subscribe(_ =>
-                                 {
-                                     if (_configuration.SubscribeWeakly)
-                                         observable.SubscribeWeakly(SetValue);
-                                     else
-                                         observable.Subscribe(SetValue);
-                                 });
     }
 
 
     /// <summary>
-    /// Dont inline this function with a lambda
+    /// Don't inline this function with a lambda
     /// </summary>
     void SetValue(T value)
     {
@@ -81,9 +71,10 @@ internal class FromObservableSignal<T> : ISignal<T>, IEquatable<FromObservableSi
         if (someoneAlreadyAskedValue)
             return;
 
-        _someoneAskedValueSubject.OnNext(default);
-        _someoneAskedValueSubject.OnCompleted();
-        _someoneAskedValueSubject.Dispose();
+        if (_configuration.SubscribeWeakly)
+            _observable.SubscribeWeakly(SetValue);
+        else
+            _observable.Subscribe(SetValue);
     }
 
     public Observable<T> Values => this.OnPropertyChanged(false);

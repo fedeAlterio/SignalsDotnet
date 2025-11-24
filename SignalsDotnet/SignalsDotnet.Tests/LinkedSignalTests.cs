@@ -1,14 +1,16 @@
 using FluentAssertions;
 using R3;
 using SignalsDotnet.Helpers;
+using SignalsDotnet.Tests.Helpers;
 
 namespace SignalsDotnet.Tests;
 
 public class LinkedSignalTests
 {
     [Fact]
-    public void ShouldNotifyWhenAnyChanged()
+    public async Task ShouldNotifyWhenAnyChanged()
     {
+        await this.SwitchToMainThread();
         var prop1 = new Signal<int>();
         var prop2 = new Signal<int>();
 
@@ -30,8 +32,9 @@ public class LinkedSignalTests
     }
 
     [Fact]
-    public void ShouldNotifyOnlyLatestScannedProperties()
+    public async Task ShouldNotifyOnlyLatestScannedProperties()
     {
+        await this.SwitchToMainThread();
         var number1 = new Signal<int>();
         var number2 = new Signal<int>();
         var defaultValue = new Signal<int>();
@@ -73,8 +76,9 @@ public class LinkedSignalTests
     }
 
     [Fact]
-    public void Untracked_ShouldNotTrack_SignalChanges()
+    public async Task Untracked_ShouldNotTrack_SignalChanges()
     {
+        await this.SwitchToMainThread();
         var a = new Signal<int>();
         var b = new Signal<int>();
 
@@ -93,8 +97,9 @@ public class LinkedSignalTests
     }
 
     [Fact]
-    public void UntrackedValue_ShouldNotTrack_SignalChanges()
+    public async Task UntrackedValue_ShouldNotTrack_SignalChanges()
     {
+        await this.SwitchToMainThread();
         var a = new Signal<int>();
         var b = new Signal<int>();
 
@@ -113,8 +118,9 @@ public class LinkedSignalTests
     }
 
     [Fact]
-    public void LinkedSignal_ShouldBeWritable()
+    public async Task LinkedSignal_ShouldBeWritable()
     {
+        await this.SwitchToMainThread();
         var source = new Signal<int>(5);
         var linked = Signal.Linked(() => source.Value * 2);
 
@@ -130,8 +136,9 @@ public class LinkedSignalTests
     }
 
     [Fact]
-    public void LinkedSignal_WithFallback_ShouldUseFallbackOnError()
+    public async Task LinkedSignal_WithFallback_ShouldUseFallbackOnError()
     {
+        await this.SwitchToMainThread();
         var shouldThrow = new Signal<bool>(false);
         var fallbackCalled = false;
 
@@ -157,8 +164,9 @@ public class LinkedSignalTests
     }
 
     [Fact]
-    public void LinkedSignal_WithoutFallback_ShouldUseEmptyOptionalOnError()
+    public async Task LinkedSignal_WithoutFallback_ShouldUseEmptyOptionalOnError()
     {
+        await this.SwitchToMainThread();
         var shouldThrow = new Signal<bool>(false);
         
 
@@ -180,8 +188,9 @@ public class LinkedSignalTests
     }
 
     [Fact]
-    public void LinkedSignal_CanChainMultipleSignals()
+    public async Task LinkedSignal_CanChainMultipleSignals()
     {
+        await this.SwitchToMainThread();
         var a = new Signal<int>(1);
         var b = new Signal<int>(2);
         var c = new Signal<int>(3);
@@ -201,8 +210,9 @@ public class LinkedSignalTests
     }
 
     [Fact]
-    public void LinkedSignal_WithComplexObject_ShouldTrackChanges()
+    public async Task LinkedSignal_WithComplexObject_ShouldTrackChanges()
     {
+        await this.SwitchToMainThread();
         var firstName = new Signal<string>("John");
         var lastName = new Signal<string>("Doe");
 
@@ -218,8 +228,9 @@ public class LinkedSignalTests
     }
 
     [Fact]
-    public void LinkedSignal_ManualWrite_ShouldNotifySubscribers()
+    public async Task LinkedSignal_ManualWrite_ShouldNotifySubscribers()
     {
+        await this.SwitchToMainThread();
         var source = new Signal<int>(5);
         var linked = Signal.Linked(() => source.Value * 2);
 
@@ -240,8 +251,9 @@ public class LinkedSignalTests
     }
 
     [Fact]
-    public void LinkedSignal_WithConfiguration_ShouldApplyConfiguration()
+    public async Task LinkedSignal_WithConfiguration_ShouldApplyConfiguration()
     {
+        await this.SwitchToMainThread();
         var source = new Signal<int>(5);
         var configApplied = false;
 

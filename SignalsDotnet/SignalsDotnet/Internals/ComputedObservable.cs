@@ -1,5 +1,6 @@
-﻿using SignalsDotnet.Helpers;
-using R3;
+﻿using R3;
+using SignalsDotnet.Helpers;
+using System.Runtime.CompilerServices;
 
 namespace SignalsDotnet.Internals;
 
@@ -27,45 +28,47 @@ internal class ComputedObservable<T> : Observable<T>
     {
         readonly ComputedObservable<T> _observable;
         readonly Observer<T> _observer;
-        readonly BehaviorSubject<bool> _disposed = new(false);
+        readonly CancellationTokenSource _disposed = new();
+        DisposableBag _disconnectSubscription;
 
         public Subscription(ComputedObservable<T> observable, Observer<T> observer)
         {
             _observable = observable;
             _observer = observer;
-            Observable.FromAsync(ComputeResult)
-                        .Take(1)
-                        .TakeUntil(_disposed.Where(x => x))
-                        .Subscribe(OnNewResult);
+            WatchSignalsChanges();
         }
 
-        void OnNewResult(ComputationResult result)
+        async void WatchSignalsChanges()
         {
-            var valueNotified = false;
-
-            result.ShouldComputeNextResult
-                  .Take(1)
-                  .SelectMany(_ =>
-                  {
-                      NotifyValueIfNotAlready();
-                      return Observable.FromAsync(ComputeResult);
-                  })
-                  .TakeUntil(_disposed.Where(x => x))
-                  .Subscribe(OnNewResult);
-
-            NotifyValueIfNotAlready();
-
-            // We notify a new value only if the func() evaluation succeeds.
-            void NotifyValueIfNotAlready()
+            try
             {
-                if (valueNotified)
-                    return;
-
-                valueNotified = true;
-                if (result.ResultOptional.TryGetValue(out var propertyValue))
+                try
                 {
-                    _observer.OnNext(propertyValue);
+                    var token = _disposed.Token;
+                    while (!token.IsCancellationRequested)
+                    {
+                        var result = await ComputeResult(_disposed.Token);
+                        if (token.IsCancellationRequested) return;
+
+                        if (result.ResultOptional.TryGetValue(out var propertyValue))
+                        {
+                            _observer.OnNext(propertyValue);
+                        }
+
+                        await using var _ = token.Register(static x => ((SyncCompletionSource)x!).SetCompleted(Unit.Default), result.SignalChangedAwaitable);
+                        await result.SignalChangedAwaitable;
+                        _disconnectSubscription.Dispose();
+                    }
                 }
+                finally
+                {
+                    // It's okay "double" dispose it
+                    _disconnectSubscription.Dispose();
+                }
+            }
+            catch
+            {
+                // Ignored
             }
         }
 
@@ -74,33 +77,46 @@ internal class ComputedObservable<T> : Observable<T>
             var referenceEquality = ReferenceEqualityComparer.Instance;
             HashSet<IReadOnlySignal> signalRequested = new(referenceEquality);
             Optional<T> result;
-            SingleNotificationObservable<bool> stopListeningForSignals = new();
 
-            var signalChangedObservable = Signal.SignalsRequested()
-                                                .TakeUntil(stopListeningForSignals)
-                                                .Where(signalRequested.Add)
-                                                .Select(static x => x.FutureValues)
-                                                .Merge()
-                                                .Take(1);
-
+            _disconnectSubscription = new();
+            var signalChangeSubscription = new DisposableBag().AddTo(ref _disconnectSubscription);
+            var signalChangedAwaitable = new SyncCompletionSource();
+            CancellationTokenSource? cts;
             if (_observable._concurrentChangeStrategy == ConcurrentChangeStrategy.CancelCurrent)
             {
-                var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 cancellationToken = cts.Token;
-                signalChangedObservable = signalChangedObservable.Do(_ => cts.Cancel())
-                                                                 .DoCancelOnCompleted(cts);
+                cts.AddTo(ref _disconnectSubscription);
             }
-
-            var scheduler = _observable._scheduler;
-            if (scheduler is not null)
+            else
             {
-                signalChangedObservable = signalChangedObservable.Select(scheduler)
-                                                                 .Switch();
+                cts = null;
             }
 
-            var shouldComputeNextResult = signalChangedObservable.Replay(1);
+            int anySignalArrived = 0;
+            var signalRequestedSubscription = Signal.SignalsRequested()
+                                                    .Subscribe(signal =>
+                                                    {
+                                                        if (!signalRequested.Add(signal)) return;
 
-            var disconnect = shouldComputeNextResult.Connect();
+                                                        signal.FutureValues.Subscribe(_ =>
+                                                        {
+                                                            if (Interlocked.CompareExchange(ref anySignalArrived, 1, 0) == 1) return;
+
+                                                            signalChangeSubscription.Dispose();
+                                                            cts?.Cancel();
+                                                            var scheduler = _observable._scheduler;
+                                                            if (scheduler is not null)
+                                                            {
+                                                                scheduler(Unit.Default).Subscribe(signalChangedAwaitable.SetCompleted)
+                                                                                       .AddTo(ref _disconnectSubscription);
+                                                            }
+                                                            else
+                                                            {
+                                                                signalChangedAwaitable.SetCompleted(Unit.Default);
+                                                            }
+                                                        }).AddTo(ref signalChangeSubscription);
+                                                    });
 
             try
             {
@@ -110,7 +126,7 @@ internal class ComputedObservable<T> : Observable<T>
                 }
                 finally
                 {
-                    stopListeningForSignals.SetResult(true);
+                    signalRequestedSubscription.Dispose();
                 }
             }
             catch (OperationCanceledException)
@@ -131,74 +147,44 @@ internal class ComputedObservable<T> : Observable<T>
                 }
             }
 
-            var resultObservable = new DisconnectOnDisposeObservable<Unit>(shouldComputeNextResult, disconnect);
 
-            return new(resultObservable, result);
+            return new(signalChangedAwaitable, result);
         }
 
 
-        public void Dispose() => _disposed.OnNext(true);
+        public void Dispose()
+        {
+            _disposed.Cancel();
+            _disposed.Dispose();
+        }
     }
 
-    record struct ComputationResult(Observable<Unit> ShouldComputeNextResult, Optional<T> ResultOptional);
-    class DisconnectOnDisposeObservable<TV> : Observable<TV>
+    record struct ComputationResult(SyncCompletionSource SignalChangedAwaitable, Optional<T> ResultOptional);
+    class SyncCompletionSource : INotifyCompletion
     {
-        readonly Observable<TV> _observable;
-        readonly IDisposable _disconnect;
+        Action? _continuation;
+        public SyncCompletionSource GetAwaiter() => this;
+        public bool IsCompleted => ReferenceEquals(Volatile.Read(ref _continuation), ActionStub.Nop);
 
-        public DisconnectOnDisposeObservable(Observable<TV> observable, IDisposable disconnect)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnCompleted(Action continuation)
         {
-            _observable = observable;
-            _disconnect = disconnect;
+            Action? original = Interlocked.CompareExchange(ref _continuation, continuation, null);
+            if (original is null) return; 
+            if (ReferenceEquals(original, ActionStub.Nop))
+                continuation(); 
+            else
+                throw new InvalidOperationException("Double await");
         }
 
-        protected override IDisposable SubscribeCore(Observer<TV> observer)
-        {
-            _observable.Subscribe(observer.OnNext, observer.OnErrorResume, observer.OnCompleted);
-            return _disconnect;
-        }
+        public void GetResult() {}
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetCompleted(Unit unit) => Interlocked.Exchange(ref _continuation, ActionStub.Nop)?.Invoke();
     }
+}
 
-    class SingleNotificationObservable<TNotification> : Observable<TNotification>, IDisposable
-    {
-        Observer<TNotification>? _observer;
-        readonly object _locker = new();
-        Optional<TNotification> _value;
-
-        protected override IDisposable SubscribeCore(Observer<TNotification> observer)
-        {
-            lock (_locker)
-            {
-                if (_value.TryGetValue(out var value))
-                {
-                    observer.OnNext(value);
-                    observer.OnCompleted();
-                }
-                else
-                {
-                    _observer = observer;
-                }
-
-                return this;
-            }
-        }
-
-        public void SetResult(TNotification value)
-        {
-            lock (this)
-            {
-                var observer = _observer;
-                if (observer is not null)
-                {
-                    observer.OnNext(value);
-                    observer.OnCompleted();
-                    return;
-                }
-
-                _value = new(value);
-            }
-        }
-
-        public void Dispose() => Interlocked.Exchange(ref _observer, null);
-    }
+internal class ActionStub
+{
+    public static readonly Action Nop = () => { };
 }
