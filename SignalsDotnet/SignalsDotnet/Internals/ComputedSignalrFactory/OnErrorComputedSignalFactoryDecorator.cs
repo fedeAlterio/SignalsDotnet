@@ -125,6 +125,9 @@ internal sealed class OnErrorComputedSignalFactoryDecorator(IComputedSignalFacto
             return;
         }
 
-        Signal.Untracked(() => onException(e));
+        using (Signal.UntrackedScope())
+        {
+            onException(e);
+        }
     }
 }

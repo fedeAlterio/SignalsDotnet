@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using R3;
 
@@ -76,6 +77,7 @@ public static partial class Signal
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static T GetValue<T>(IReadOnlySignal property, in T value)
     {
         uint affinityValue;

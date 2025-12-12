@@ -159,7 +159,7 @@ internal sealed class ComputedObservable<T> : Observable<T>
         }
     }
 
-    record struct ComputationResult(SyncCompletionSource SignalChangedAwaitable, Optional<T> ResultOptional);
+    readonly record struct ComputationResult(SyncCompletionSource SignalChangedAwaitable, Optional<T> ResultOptional);
     sealed class SyncCompletionSource : INotifyCompletion
     {
         Action? _continuation;
