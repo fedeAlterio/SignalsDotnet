@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 
 namespace SignalsDotnet.Internals;
 
-internal class ComputedObservable<T> : Observable<T>
+internal sealed class ComputedObservable<T> : Observable<T>
 {
     readonly Func<CancellationToken, ValueTask<T>> _func;
     readonly Func<Optional<T>> _fallbackValue;
@@ -24,7 +24,7 @@ internal class ComputedObservable<T> : Observable<T>
 
     protected override IDisposable SubscribeCore(Observer<T> observer) => new Subscription(this, observer);
 
-    class Subscription : IDisposable
+    sealed class Subscription : IDisposable
     {
         readonly ComputedObservable<T> _observable;
         readonly Observer<T> _observer;
@@ -45,9 +45,9 @@ internal class ComputedObservable<T> : Observable<T>
                 try
                 {
                     var token = _disposed.Token;
-                    while (!token.IsCancellationRequested)
+                    do
                     {
-                        var result = await ComputeResult(_disposed.Token);
+                        var result = await ComputeResult(token);
                         if (token.IsCancellationRequested) return;
 
                         if (result.ResultOptional.TryGetValue(out var propertyValue))
@@ -58,7 +58,7 @@ internal class ComputedObservable<T> : Observable<T>
                         await using var _ = token.Register(static x => ((SyncCompletionSource)x!).SetCompleted(Unit.Default), result.SignalChangedAwaitable);
                         await result.SignalChangedAwaitable;
                         _disconnectSubscription.Dispose();
-                    }
+                    } while (!token.IsCancellationRequested);
                 }
                 finally
                 {
@@ -74,8 +74,7 @@ internal class ComputedObservable<T> : Observable<T>
 
         async ValueTask<ComputationResult> ComputeResult(CancellationToken cancellationToken)
         {
-            var referenceEquality = ReferenceEqualityComparer.Instance;
-            HashSet<IReadOnlySignal> signalRequested = new(referenceEquality);
+            var signalRequested = new List<IReadOnlySignal>();
             Optional<T> result;
 
             _disconnectSubscription = new();
@@ -97,7 +96,8 @@ internal class ComputedObservable<T> : Observable<T>
             var signalRequestedSubscription = Signal.SignalsRequested()
                                                     .Subscribe(signal =>
                                                     {
-                                                        if (!signalRequested.Add(signal)) return;
+                                                        if (signalRequested.Contains(signal, ReferenceEqualityComparer.Instance)) return;
+                                                        signalRequested.Add(signal);
 
                                                         signal.FutureValues.Subscribe(_ =>
                                                         {
@@ -160,7 +160,7 @@ internal class ComputedObservable<T> : Observable<T>
     }
 
     record struct ComputationResult(SyncCompletionSource SignalChangedAwaitable, Optional<T> ResultOptional);
-    class SyncCompletionSource : INotifyCompletion
+    sealed class SyncCompletionSource : INotifyCompletion
     {
         Action? _continuation;
         public SyncCompletionSource GetAwaiter() => this;
@@ -184,7 +184,7 @@ internal class ComputedObservable<T> : Observable<T>
     }
 }
 
-internal class ActionStub
+internal sealed class ActionStub
 {
     public static readonly Action Nop = () => { };
 }

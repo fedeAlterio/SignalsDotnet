@@ -4,7 +4,7 @@ using SignalsDotnet.Helpers;
 
 namespace SignalsDotnet.Internals.ComputedSignalrFactory;
 
-internal class DefaultComputedSignalFactory : IComputedSignalFactory
+internal sealed class DefaultComputedSignalFactory : IComputedSignalFactory
 {
     public IReadOnlySignal<T> Computed<T>(Func<T> func, Func<Optional<T>> fallbackValue, ReadonlySignalConfigurationDelegate<T?>? configuration = null)
     {

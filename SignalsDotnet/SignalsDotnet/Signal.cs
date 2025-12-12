@@ -1,6 +1,4 @@
-﻿using System.Collections.Concurrent;
-using System.ComponentModel;
-using System.Runtime.CompilerServices;
+﻿using System.ComponentModel;
 using System.Runtime.InteropServices;
 using R3;
 
@@ -13,7 +11,7 @@ public static partial class Signal
     static readonly Dictionary<uint, Subject<IReadOnlySignal>> _signalRequestedByComputedAffinity = new();
     internal static readonly PropertyChangedEventArgs PropertyChangedArgs = new("Value");
 
-    internal static Observable<IReadOnlySignal> SignalsRequested()
+    internal static SignalsRequestedObservable SignalsRequested()
     {
         return new SignalsRequestedObservable();
     }
@@ -94,7 +92,7 @@ public static partial class Signal
         return value;
     }
 
-    public class SignalsRequestedObservable : Observable<IReadOnlySignal>
+    internal sealed class SignalsRequestedObservable : Observable<IReadOnlySignal>
     {
         protected override IDisposable SubscribeCore(Observer<IReadOnlySignal> observer)
         {
@@ -122,40 +120,25 @@ public static partial class Signal
         }
     }
 
-    readonly struct SignalsRequestedDisposable : IDisposable
+    readonly struct SignalsRequestedDisposable(uint affinityValue, Subject<IReadOnlySignal> subject) : IDisposable
     {
-        readonly uint _affinityValue;
-        readonly Subject<IReadOnlySignal> _subject;
-
-        public SignalsRequestedDisposable(uint affinityValue, Subject<IReadOnlySignal> subject)
-        {
-            _affinityValue = affinityValue;
-            _subject = subject;
-        }
         public void Dispose()
         {
             lock (_computedSignalAffinityValue)
             {
-                _signalRequestedByComputedAffinity.Remove(_affinityValue, out _);
-
+                _signalRequestedByComputedAffinity.Remove(affinityValue, out _);
             }
-            _subject.Dispose();
+            subject.Dispose();
         }
     }
 
-    public readonly struct UntrackedReleaserDisposable : IDisposable
+    public readonly struct UntrackedReleaserDisposable(uint oldValue) : IDisposable
     {
-        readonly uint _oldValue;
-
-        public UntrackedReleaserDisposable(uint oldValue)
-        {
-            _oldValue = oldValue;
-        }
         public void Dispose()
         {
             lock (_computedSignalAffinityValue)
             {
-                _computedSignalAffinityValue.Value = _oldValue;
+                _computedSignalAffinityValue.Value = oldValue;
             }
         }
     }
