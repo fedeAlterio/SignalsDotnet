@@ -74,7 +74,7 @@ internal sealed class ComputedObservable<T> : Observable<T>
 
         async ValueTask<ComputationResult> ComputeResult(CancellationToken cancellationToken)
         {
-            var signalRequested = new List<IReadOnlySignal>();
+            var signalsRequested = new HashSet<IReadOnlySignal>(ReferenceEqualityComparer.Instance);
             Optional<T> result;
 
             _disconnectSubscription = new();
@@ -96,8 +96,7 @@ internal sealed class ComputedObservable<T> : Observable<T>
             var signalRequestedSubscription = Signal.SignalsRequested()
                                                     .Subscribe(signal =>
                                                     {
-                                                        if (signalRequested.Contains(signal, ReferenceEqualityComparer.Instance)) return;
-                                                        signalRequested.Add(signal);
+                                                        if (!signalsRequested.Add(signal)) return;
 
                                                         signal.FutureValues.Subscribe(_ =>
                                                         {
