@@ -50,6 +50,7 @@ internal static class ObservableFromPropertyChanged
                 }
 
                 _observer.OnNext(Unit.Default);
+                
                 lock (_locker)
                 {
                     if (_isDisposed)
@@ -85,16 +86,10 @@ internal static class ObservableFromPropertyChanged
     }
 
 
-    public class FromPropertyChangedObservable<T> : Observable<T>
+    public class FromPropertyChangedObservable<T>(IReadOnlySignal<T> signal, bool futureChangesOnly) : Observable<T>
     {
-        readonly IReadOnlySignal<T> _signal;
-        readonly bool _futureChangesOnly;
-
-        public FromPropertyChangedObservable(IReadOnlySignal<T> signal, bool futureChangesOnly)
-        {
-            _signal = signal;
-            _futureChangesOnly = futureChangesOnly;
-        }
+        readonly IReadOnlySignal<T> _signal = signal;
+        readonly bool _futureChangesOnly = futureChangesOnly;
 
         protected override IDisposable SubscribeCore(Observer<T> observer)
         {
