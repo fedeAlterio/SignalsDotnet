@@ -10,14 +10,9 @@ internal static class ObservableFromINotifyCollectionChanged
         return new CollectionChangedObservable(collection);
     }
 
-    class CollectionChangedObservable : Observable<(object? sender, NotifyCollectionChangedEventArgs e)>
+    sealed class CollectionChangedObservable(INotifyCollectionChanged notifyCollectionChanged) : Observable<(object? sender, NotifyCollectionChangedEventArgs e)>
     {
-        readonly INotifyCollectionChanged _notifyCollectionChanged;
-
-        public CollectionChangedObservable(INotifyCollectionChanged notifyCollectionChanged)
-        {
-            _notifyCollectionChanged = notifyCollectionChanged;
-        }
+        readonly INotifyCollectionChanged _notifyCollectionChanged = notifyCollectionChanged;
 
         protected override IDisposable SubscribeCore(Observer<(object? sender, NotifyCollectionChangedEventArgs e)> observer)
         {

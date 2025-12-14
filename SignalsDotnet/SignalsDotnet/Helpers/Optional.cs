@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 
 namespace SignalsDotnet.Helpers;
 
@@ -14,9 +15,11 @@ public readonly struct Optional<T>
 
 public static class OptionalExtensions
 {
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool TryGetValue<T>(this Optional<T> @this, [NotNullWhen(true)] out T? value)
     {
-        value = @this.HasValue ? @this.Value : default;
-        return @this.HasValue;
+        var hasValue = @this.HasValue;
+        value = hasValue ? @this.Value : default;
+        return hasValue;
     }
 }

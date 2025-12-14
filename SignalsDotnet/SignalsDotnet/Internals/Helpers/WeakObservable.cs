@@ -13,7 +13,7 @@ internal static class WeakObservable
         return subscription;
     }
 
-    class WeakAction<T>
+    sealed class WeakAction<T>
     {
         public event Action? GarbageCollected;
         readonly WeakReference<object>? _weakTarget;
