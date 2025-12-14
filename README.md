@@ -10,8 +10,6 @@ This library is a port of Angular Signals to the .NET world, adapted for .NET MV
 
 If you need an introduction to what signals are, see: https://angular.io/guide/signals
 
-**Current Version:** 2.0.6  
-
 ## Table of Contents
 
 - [Get Started](#get-started)
@@ -20,6 +18,7 @@ If you need an introduction to what signals are, see: https://angular.io/guide/s
 - [Signal Types](#signal-types)
   - [Signal&lt;T&gt;](#signalt)
   - [CollectionSignal&lt;T&gt;](#collectionsignalt)
+  - [DictionarySignal&lt;TKey, TValue&gt;](#dictionarysignaltkey-tvalue)
   - [Factory Methods](#factory-methods)
 - [Computed Signals & Linked Signals](#computed-signals--linked-signals)
   - [Creating Computed Signals](#creating-computed-signals)
@@ -284,6 +283,70 @@ public CollectionSignal<ObservableCollection<Person>> People { get; } = new(
 - `collectionChangedConfiguration` - Configure how collection change events are processed (throttling, filtering, etc.)
 - `propertyChangedConfiguration` - Configure the signal's property changed behavior
 - `SubscribeWeakly` - Whether to subscribe to collection events weakly (default: false) to prevent memory leaks
+
+### `DictionarySignal<TKey, TValue>`
+
+A `DictionarySignal<TKey, TValue>` implements `IDictionary<TKey, TValue>` and provides fine-grained reactive tracking for dictionary operations. Each key access is tracked independently, so computed signals only recompute when the specific keys they depend on change.
+
+```c#
+public class ViewModel
+{
+    public DictionarySignal<string, int> Scores { get; } = new();
+    
+    public ViewModel()
+    {
+        Scores["player1"] = 100;
+        Scores["player2"] = 150;
+        
+        var player1Score = Signal.Computed(() => 
+        {
+            return Scores.TryGetValue("player1", out var score) ? score : 0;
+        });
+        
+        Scores["player1"] = 200;
+    }
+}
+```
+
+**Key Features:**
+
+**Fine-Grained Key Tracking**: Computed signals only subscribe to the keys they actually access. When a computed signal stops accessing a key, the tracking is automatically cleaned up.
+
+```c#
+var dictionary = new DictionarySignal<string, int>();
+dictionary["a"] = 1;
+dictionary["b"] = 2;
+
+var useA = new Signal<bool>(true);
+var score = Signal.Computed(() => 
+{
+    return useA.Value ? dictionary["a"] : dictionary["b"];
+});
+
+_ = score.Value;
+useA.Value = false;
+```
+
+**Reactive Collections**: Track changes to `Keys`, `Values`, and `Count` properties:
+
+```c#
+var keyCount = Signal.Computed(() => dictionary.Keys.Count);
+
+var totalScore = Signal.Computed(() => dictionary.Values.Sum());
+```
+
+**Operations**: All standard dictionary operations are supported and reactive:
+
+```c#
+dictionary.Add("player3", 75);
+dictionary.Remove("player1");
+dictionary.ContainsKey("player2");
+dictionary.Clear();
+
+dictionary["player3"] = 200;
+```
+
+**Memory Efficient**: Key tracking subscriptions are automatically removed when computed signals no longer access a specific key, preventing memory leaks in scenarios with dynamic key access patterns.
 
 ### Factory Methods
 

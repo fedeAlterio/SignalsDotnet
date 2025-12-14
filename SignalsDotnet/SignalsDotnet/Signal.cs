@@ -33,6 +33,8 @@ public static partial class Signal
         return new UntrackedReleaserDisposable(oldAffinity);
     }
 
+    internal static bool InsideComputed => _signalRequestedByComputedAffinity.ContainsKey(_computedSignalAffinityValue.Value);
+
     public static async Task<T> Untracked<T>(Func<Task<T>> action)
     {
         if (action is null)
