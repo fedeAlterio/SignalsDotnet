@@ -84,6 +84,9 @@ public class Signal<T> : ISignal<T>, IEquatable<Signal<T>>
     public override int GetHashCode() => _value is null ? 0 : _configuration.Comparer.GetHashCode(_value!);
 
     public event PropertyChangedEventHandler? PropertyChanged;
-    Observable<Unit> IReadOnlySignal.Values => this.OnPropertyChangedAsUnit(false);
-    Observable<Unit> IReadOnlySignal.FutureValues => this.OnPropertyChangedAsUnit(true);
+
+    protected internal virtual Observable<Unit> UntypedValues => this.OnPropertyChangedAsUnit(false);
+    protected internal virtual Observable<Unit> UntypedFutureValues => this.OnPropertyChangedAsUnit(true);
+    Observable<Unit> IReadOnlySignal.Values => UntypedValues;
+    Observable<Unit> IReadOnlySignal.FutureValues => UntypedFutureValues;
 }
