@@ -29,7 +29,7 @@ public class Signal<T> : ISignal<T>, IEquatable<Signal<T>>
         get => Signal.GetValue(this, in _value);
         set
         {
-            if (_configuration.RaiseOnlyWhenChanged && EqualityComparer<T>.Default.Equals(_value, value))
+            if (_configuration.RaiseOnlyWhenChanged && _configuration.Comparer.Equals(_value, value))
                 return;
 
             _value = value;
