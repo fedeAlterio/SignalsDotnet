@@ -84,7 +84,7 @@ public class DictionarySignal<TKey, TValue> : IDictionary<TKey, TValue> where TK
 
     public void Clear()
     {
-        var addedOrRemovedSignals = KeySignals.Values;
+        var addedOrRemovedSignals = KeySignals.Values.ToList();
         KeySignals.Clear();
         _valuesByKey.Clear();
         _keysChanged.Invoke();

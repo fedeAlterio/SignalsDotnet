@@ -441,4 +441,24 @@ public class DictionarySignalTests
         useA.Value = true;
         dictionary.KeySignals.Count.Should().Be(1);
     }
+
+    [Fact]
+    public async Task Clear_ShouldNotifyAllTrackedKeys()
+    {
+        await this.SwitchToMainThread();
+        
+        var dictionary = new DictionarySignal<string, int>();
+        dictionary["key1"] = 1;
+        dictionary["key2"] = 1;
+
+        var computed1 = Signal.Computed(() => dictionary.ContainsKey("key1"));
+        var computed2 = Signal.Computed(() => dictionary.ContainsKey("key2"));
+        _ = computed1.Value;
+        _ = computed2.Value;
+        computed1.Value.Should().BeTrue();
+        computed2.Value.Should().BeTrue();
+        dictionary.Clear();
+        computed1.Value.Should().BeFalse();
+        computed2.Value.Should().BeFalse();
+    }
 }
