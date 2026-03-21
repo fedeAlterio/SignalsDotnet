@@ -157,4 +157,3 @@ public static partial class Signal
         }
     }
 }
-
