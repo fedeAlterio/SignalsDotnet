@@ -6,7 +6,11 @@ namespace SignalsDotnet;
 
 public static partial class Signal
 {
-    static readonly AsyncLocal<Stack<Subject<INotifySignalChanged>>?> _signalsStack = new();
+    public record StackState
+    {
+        public Subject<INotifySignalChanged>? Subject { get; set; }
+    }
+    static readonly AsyncLocal<Stack<StackState>?> _signalsStack = new();
     internal static readonly PropertyChangedEventArgs PropertyChangedArgs = new("Value");
 
     internal static SignalsRequestedObservable SignalsRequested()
@@ -19,7 +23,7 @@ public static partial class Signal
         lock (_signalsStack)
         {
             var stack = _signalsStack.Value;
-            if (stack is null)
+            if (stack is null || !stack.TryPeek(out var state) || state.Subject is null)
             {
                 return new(null);
             }
@@ -76,20 +80,25 @@ public static partial class Signal
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static T GetValue<T>(INotifySignalChanged signal, in T value)
+    internal static T GetValue<T>(INotifySignalChanged signal, in T value)
     {
-        Subject<INotifySignalChanged> subject;
+        NotifySignalRequested(signal);
+        return value;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void NotifySignalRequested(INotifySignalChanged signal)
+    {
+        StackState state;
         lock (_signalsStack)
         {
-            if (_signalsStack.Value?.TryPeek(out subject!) is not true)
+            if (_signalsStack.Value?.TryPeek(out state!) is not true)
             {
-                return value;
+                return;
             }
         }
 
-        subject.OnNext(signal);
-
-        return value;
+        state.Subject?.OnNext(signal);
     }
 
     internal sealed class SignalsRequestedObservable : Observable<INotifySignalChanged>
@@ -105,12 +114,16 @@ public static partial class Signal
                 if (stack.Count == 0)
                 {
                     subject = new();
-                    stack.Push(subject);
+                    stack.Push(new StackState
+                    {
+                        Subject = subject
+                    });
                     shouldClear = true;
                 }
                 else
                 {
-                    stack.TryPeek(out subject!);
+                    stack.TryPeek(out var state);
+                    subject = state!.Subject ??= new();
                     shouldClear = false;
                 }
 
@@ -132,7 +145,7 @@ public static partial class Signal
         }
     }
 
-    public readonly struct UntrackedReleaserDisposable(Stack<Subject<INotifySignalChanged>>? stack) : IDisposable
+    public readonly struct UntrackedReleaserDisposable(Stack<StackState>? stack) : IDisposable
     {
         public void Dispose()
         {
