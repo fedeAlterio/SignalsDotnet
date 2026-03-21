@@ -109,7 +109,7 @@ internal class FromObservableSignal<T> : ISignal<T>, IEquatable<FromObservableSi
     public event PropertyChangedEventHandler? PropertyChanged;
 
     Observable<Unit> IReadOnlySignal.Values => this.OnPropertyChangedAsUnit(false);
-    Observable<Unit> IReadOnlySignal.FutureValues => this.OnPropertyChangedAsUnit(true);
+    Observable<Unit> INotifySignalChanged.FutureValues => this.OnPropertyChangedAsUnit(true);
 }
 
 internal class FromObservableAsyncSignal<T> : FromObservableSignal<T>, IAsyncSignal<T>

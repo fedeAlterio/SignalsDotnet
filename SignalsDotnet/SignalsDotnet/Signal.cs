@@ -1,15 +1,16 @@
 ﻿using System.ComponentModel;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using R3;
 
 namespace SignalsDotnet;
 
 public static partial class Signal
 {
-    static uint _nextComputedSignalAffinityValue;
-    static readonly AsyncLocal<uint> _computedSignalAffinityValue = new();
-    static readonly Dictionary<uint, Subject<IReadOnlySignal>> _signalRequestedByComputedAffinity = new();
+    public record StackState
+    {
+        public Subject<INotifySignalChanged>? Subject { get; set; }
+    }
+    static readonly AsyncLocal<Stack<StackState>?> _signalsStack = new();
     internal static readonly PropertyChangedEventArgs PropertyChangedArgs = new("Value");
 
     internal static SignalsRequestedObservable SignalsRequested()
@@ -19,21 +20,20 @@ public static partial class Signal
 
     public static UntrackedReleaserDisposable UntrackedScope()
     {
-        uint oldAffinity;
-        lock (_computedSignalAffinityValue)
+        lock (_signalsStack)
         {
-            oldAffinity = _computedSignalAffinityValue.Value;
-            _computedSignalAffinityValue.Value = _nextComputedSignalAffinityValue;
-            unchecked
+            var stack = _signalsStack.Value;
+            if (stack is null || !stack.TryPeek(out var state) || state.Subject is null)
             {
-                _nextComputedSignalAffinityValue++;
+                return new(null);
             }
-        }
 
-        return new UntrackedReleaserDisposable(oldAffinity);
+            stack.Push(new());
+            return new UntrackedReleaserDisposable(stack);
+        }
     }
 
-    internal static bool InsideComputed => _signalRequestedByComputedAffinity.ContainsKey(_computedSignalAffinityValue.Value);
+    internal static bool InsideComputed => _signalsStack.Value is { Count: > 0 };
 
     public static async Task<T> Untracked<T>(Func<Task<T>> action)
     {
@@ -80,69 +80,79 @@ public static partial class Signal
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static T GetValue<T>(IReadOnlySignal property, in T value)
+    internal static T GetValue<T>(INotifySignalChanged signal, in T value)
     {
-        uint affinityValue;
-        lock (_computedSignalAffinityValue)
-        {
-            affinityValue = _computedSignalAffinityValue.Value;
-        }
-
-        if (_signalRequestedByComputedAffinity.TryGetValue(affinityValue, out var subject))
-        {
-            subject.OnNext(property);
-        }
-
+        NotifySignalRequested(signal);
         return value;
     }
 
-    internal sealed class SignalsRequestedObservable : Observable<IReadOnlySignal>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void NotifySignalRequested(INotifySignalChanged signal)
     {
-        protected override IDisposable SubscribeCore(Observer<IReadOnlySignal> observer)
+        StackState state;
+        lock (_signalsStack)
         {
-            lock (_computedSignalAffinityValue)
+            if (_signalsStack.Value?.TryPeek(out state!) is not true)
             {
-                var affinityValue = _nextComputedSignalAffinityValue;
-                unchecked
+                return;
+            }
+        }
+
+        state.Subject?.OnNext(signal);
+    }
+
+    internal sealed class SignalsRequestedObservable : Observable<INotifySignalChanged>
+    {
+        protected override IDisposable SubscribeCore(Observer<INotifySignalChanged> observer)
+        {
+            lock (_signalsStack)
+            {
+                bool shouldClear;
+                Subject<INotifySignalChanged> subject;
+                var stack = _signalsStack.Value ??= new();
+
+                if (stack.Count == 0)
                 {
-                    _nextComputedSignalAffinityValue++;
+                    subject = new();
+                    stack.Push(new StackState
+                    {
+                        Subject = subject
+                    });
+                    shouldClear = true;
+                }
+                else
+                {
+                    stack.TryPeek(out var state);
+                    subject = state!.Subject ??= new();
+                    shouldClear = false;
                 }
 
-                _computedSignalAffinityValue.Value = affinityValue;
-
-                ref var subjectRef = ref CollectionsMarshal.GetValueRefOrAddDefault(_signalRequestedByComputedAffinity, affinityValue, out bool exists);
-                if (exists)
-                {
-                    return Disposable.Empty;
-                }
-
-                var subject = new Subject<IReadOnlySignal>();
-                subjectRef = subject;
                 subject.Subscribe(observer.OnNext, observer.OnErrorResume, observer.OnCompleted);
-                return new SignalsRequestedDisposable(affinityValue, subject);
+                return new SignalsRequestedDisposable(shouldClear);
             }
         }
     }
 
-    readonly struct SignalsRequestedDisposable(uint affinityValue, Subject<IReadOnlySignal> subject) : IDisposable
+    readonly struct SignalsRequestedDisposable(bool shouldClear) : IDisposable
     {
         public void Dispose()
         {
-            lock (_computedSignalAffinityValue)
+            if (!shouldClear) return;
+            lock (_signalsStack)
             {
-                _signalRequestedByComputedAffinity.Remove(affinityValue, out _);
+                _signalsStack.Value = null;
             }
-            subject.Dispose();
         }
     }
 
-    public readonly struct UntrackedReleaserDisposable(uint oldValue) : IDisposable
+    public readonly struct UntrackedReleaserDisposable(Stack<StackState>? stack) : IDisposable
     {
         public void Dispose()
         {
-            lock (_computedSignalAffinityValue)
+            if (stack is null) return;
+            lock (_signalsStack)
             {
-                _computedSignalAffinityValue.Value = oldValue;
+                stack.Pop();
             }
         }
     }

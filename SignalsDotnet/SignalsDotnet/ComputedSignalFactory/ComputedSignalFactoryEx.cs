@@ -1,7 +1,7 @@
 ﻿using R3;
 using SignalsDotnet.Configuration;
 using SignalsDotnet.Helpers;
-using SignalsDotnet.Internals.ComputedSignalrFactory;
+using SignalsDotnet.Internals.ComputedSignalsFactory;
 
 namespace SignalsDotnet;
 
@@ -10,6 +10,11 @@ public static class ComputedSignalFactoryEx
     public static IComputedSignalFactory DisconnectEverythingWhen(this IComputedSignalFactory @this, Observable<bool> shouldBeCancelled)
     {
         return new CancelComputedSignalFactoryDecorator(@this, CancellationSignal.Create(shouldBeCancelled));
+    }
+
+    public static IComputedSignalFactory DisconnectEverythingWhen(this IComputedSignalFactory @this, Func<bool> shouldBeCancelled)
+    {
+        return new CancelComputedSignalFactoryDecorator(@this, CancellationSignal.Create(Signal.ComputedObservable(shouldBeCancelled, () => new(true))));
     }
 
     public static IComputedSignalFactory OnException(this IComputedSignalFactory @this, Action<Exception> onException, bool ignoreOperationCancelled = true)
