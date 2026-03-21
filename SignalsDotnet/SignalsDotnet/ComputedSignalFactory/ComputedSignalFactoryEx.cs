@@ -1,7 +1,7 @@
 ﻿using R3;
 using SignalsDotnet.Configuration;
 using SignalsDotnet.Helpers;
-using SignalsDotnet.Internals.ComputedSignalrFactory;
+using SignalsDotnet.Internals.ComputedSignalsFactory;
 
 namespace SignalsDotnet;
 

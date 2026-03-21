@@ -1,4 +1,4 @@
-﻿using SignalsDotnet.Internals.ComputedSignalrFactory;
+﻿using SignalsDotnet.Internals.ComputedSignalsFactory;
 
 namespace SignalsDotnet;
 

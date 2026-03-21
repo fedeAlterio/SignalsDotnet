@@ -2,7 +2,7 @@
 using SignalsDotnet.Configuration;
 using SignalsDotnet.Helpers;
 
-namespace SignalsDotnet.Internals.ComputedSignalrFactory;
+namespace SignalsDotnet.Internals.ComputedSignalsFactory;
 
 internal sealed class DefaultComputedSignalFactory : IComputedSignalFactory
 {

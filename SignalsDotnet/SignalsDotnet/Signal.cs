@@ -76,7 +76,7 @@ public static partial class Signal
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static T GetValue<T>(INotifySignalChanged property, in T value)
+    public static T GetValue<T>(INotifySignalChanged signal, in T value)
     {
         Subject<INotifySignalChanged> subject;
         lock (_signalsStack)
@@ -87,7 +87,7 @@ public static partial class Signal
             }
         }
 
-        subject.OnNext(property);
+        subject.OnNext(signal);
 
         return value;
     }

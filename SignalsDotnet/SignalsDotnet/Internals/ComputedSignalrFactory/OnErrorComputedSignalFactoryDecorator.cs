@@ -3,7 +3,7 @@ using SignalsDotnet.Configuration;
 using SignalsDotnet.Helpers;
 using SignalsDotnet.Internals.Helpers;
 
-namespace SignalsDotnet.Internals.ComputedSignalrFactory;
+namespace SignalsDotnet.Internals.ComputedSignalsFactory;
 
 internal sealed class OnErrorComputedSignalFactoryDecorator(IComputedSignalFactory parent, bool ignoreOperationCancelled, Action<Exception> onException) : IComputedSignalFactory
 {
