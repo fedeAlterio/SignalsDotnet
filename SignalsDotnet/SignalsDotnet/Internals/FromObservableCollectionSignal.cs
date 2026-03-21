@@ -45,5 +45,5 @@ internal class FromObservableCollectionSignal<T> : IReadOnlySignal<T> where T : 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     Observable<Unit> IReadOnlySignal.Values => _collectionChanged.Prepend(Unit.Default);
-    Observable<Unit> IReadOnlySignal.FutureValues => _collectionChanged;
+    Observable<Unit> INotifySignalChanged.FutureValues => _collectionChanged;
 }

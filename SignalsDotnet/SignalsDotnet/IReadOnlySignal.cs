@@ -3,10 +3,14 @@ using R3;
 
 namespace SignalsDotnet;
 
-public interface IReadOnlySignal : INotifyPropertyChanged
+public interface INotifySignalChanged
+{
+    Observable<Unit> FutureValues { get; }
+}
+public interface IReadOnlySignal : INotifyPropertyChanged, INotifySignalChanged
 {
     Observable<Unit> Values { get; }
-    Observable<Unit> FutureValues => Values.Skip(1);
+    Observable<Unit> INotifySignalChanged.FutureValues => Values.Skip(1);
     object? Value { get; }
     object? UntrackedValue { get; }
 }

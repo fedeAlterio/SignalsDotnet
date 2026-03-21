@@ -88,5 +88,5 @@ public class Signal<T> : ISignal<T>, IEquatable<Signal<T>>
     protected internal virtual Observable<Unit> UntypedValues => this.OnPropertyChangedAsUnit(false);
     protected internal virtual Observable<Unit> UntypedFutureValues => this.OnPropertyChangedAsUnit(true);
     Observable<Unit> IReadOnlySignal.Values => UntypedValues;
-    Observable<Unit> IReadOnlySignal.FutureValues => UntypedFutureValues;
+    Observable<Unit> INotifySignalChanged.FutureValues => UntypedFutureValues;
 }
