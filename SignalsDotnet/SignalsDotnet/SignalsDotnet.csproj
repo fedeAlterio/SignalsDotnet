@@ -1,35 +1,43 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFrameworks>net8.0</TargetFrameworks>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <Description>Porting of Angular signals to dotnet</Description>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <RepositoryUrl>https://github.com/fedeAlterio/SignalsDotnet</RepositoryUrl>
-    <Version>2.1.0</Version>
-    <PackageLicenseFile>LICENSE</PackageLicenseFile>
-    <PackageIcon>icon.png</PackageIcon>
-    <PackageProjectUrl>https://github.com/fedeAlterio/SignalsDotnet</PackageProjectUrl>
-  </PropertyGroup>
+		<PropertyGroup>
+				<TargetFrameworks>net8.0;netstandard2.1</TargetFrameworks>
+				<ImplicitUsings>enable</ImplicitUsings>
+				<Nullable>enable</Nullable>
+				<Description>Porting of Angular signals to dotnet</Description>
+				<PackageReadmeFile>README.md</PackageReadmeFile>
+				<RepositoryUrl>https://github.com/fedeAlterio/SignalsDotnet</RepositoryUrl>
+				<Version>2.2.0</Version>
+				<langversion>latest</langversion>
+				<PackageLicenseFile>LICENSE</PackageLicenseFile>
+				<PackageIcon>icon.png</PackageIcon>
+				<PackageProjectUrl>https://github.com/fedeAlterio/SignalsDotnet</PackageProjectUrl>
+		</PropertyGroup>
 
-  <ItemGroup>
-    <None Include="..\..\assets\icon.png">
-      <Pack>True</Pack>
-      <PackagePath>\</PackagePath>
-    </None>
-    <None Include="..\..\LICENSE">
-      <Pack>True</Pack>
-      <PackagePath>\</PackagePath>
-    </None>
-    <None Include="..\..\README.md">
-      <Pack>True</Pack>
-      <PackagePath>\</PackagePath>
-    </None>
-  </ItemGroup>
+		<ItemGroup>
+				<None Include="..\..\assets\icon.png">
+						<Pack>True</Pack>
+						<PackagePath>\</PackagePath>
+				</None>
+				<None Include="..\..\LICENSE">
+						<Pack>True</Pack>
+						<PackagePath>\</PackagePath>
+				</None>
+				<None Include="..\..\README.md">
+						<Pack>True</Pack>
+						<PackagePath>\</PackagePath>
+				</None>
+		</ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="R3" Version="1.2.9" />
-  </ItemGroup>
+		<ItemGroup>
+				<PackageReference Include="R3" Version="1.2.9" />
+
+				<PackageReference Include="PolySharp" Version="1.14.1">
+						<PrivateAssets>all</PrivateAssets>
+						<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+				</PackageReference>
+
+		</ItemGroup>
+
 
 </Project>

@@ -12,7 +12,7 @@ internal static class GenericHelpers
         return token =>
         {
             token.ThrowIfCancellationRequested();
-            return ValueTask.FromResult(func());
+            return new(func());
         };
     }
 
@@ -25,7 +25,7 @@ internal static class GenericHelpers
         {
             token.ThrowIfCancellationRequested();
             action();
-            return ValueTask.FromResult(Unit.Default);
+            return new(Unit.Default);
         };
     }
 
