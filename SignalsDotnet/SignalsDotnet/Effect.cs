@@ -15,7 +15,7 @@ public class Effect : IDisposable
         _subscription = Signal.ComputedObservable(_ =>
                               {
                                   onChange();
-                                  return ValueTask.FromResult(Unit.Default);
+                                  return new(Unit.Default);
                               }, static () => Optional<Unit>.Empty, computationDelayer)
                               .Subscribe();
     }

@@ -74,7 +74,7 @@ internal sealed class ComputedObservable<T> : Observable<T>
 
         async ValueTask<ComputationResult> ComputeResult(CancellationToken cancellationToken)
         {
-            var signalsRequested = new HashSet<INotifySignalChanged>(ReferenceEqualityComparer.Instance);
+            var signalsRequested = new HashSet<INotifySignalChanged>(ReferenceEqualityComparer<INotifySignalChanged>.Instance);
             Optional<T> result;
 
             _disconnectSubscription = new();

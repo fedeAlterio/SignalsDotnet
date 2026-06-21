@@ -24,6 +24,7 @@ public class DictionarySignal<TKey, TValue> : IDictionary<TKey, TValue> where TK
 
         set
         {
+#if !NETSTANDARD2_1
             ref var signal = ref CollectionsMarshal.GetValueRefOrAddDefault(_valuesByKey, key, out var exists);
             if (exists)
             {
@@ -38,6 +39,21 @@ public class DictionarySignal<TKey, TValue> : IDictionary<TKey, TValue> where TK
                 _valuesChanged.Invoke();
                 somethingOnKeyChanged?.Invoke();
             }
+#else
+            if (_valuesByKey.TryGetValue(key, out var signal))
+            {
+                signal!.Value = value;
+                _valuesChanged.Invoke();
+            }
+            else
+            {
+                var somethingOnKeyChanged = GetKeySignalOrDefault(key);
+                _valuesByKey[key] = new Signal<TValue>(value);
+                _keysChanged.Invoke();
+                _valuesChanged.Invoke();
+                somethingOnKeyChanged?.Invoke();
+            }
+#endif
         }
     }
 
@@ -71,6 +87,7 @@ public class DictionarySignal<TKey, TValue> : IDictionary<TKey, TValue> where TK
         if (!Signal.InsideComputed)
             return;
 
+#if !NETSTANDARD2_1
         ref var signal = ref CollectionsMarshal.GetValueRefOrAddDefault(KeySignals, key, out var exists);
         if (exists)
         {
@@ -79,6 +96,13 @@ public class DictionarySignal<TKey, TValue> : IDictionary<TKey, TValue> where TK
         }
 
         signal = new RemoveKeyOnZeroSubscriptionsSignal(this, key);
+
+#else
+        if (!KeySignals.TryGetValue(key, out var signal))
+        {
+            KeySignals[key] = signal = new RemoveKeyOnZeroSubscriptionsSignal(this, key);
+        }
+#endif
         signal.Track();
     }
 
