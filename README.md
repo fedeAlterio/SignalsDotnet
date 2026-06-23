@@ -1,12 +1,57 @@
+## XAML
 <img src="./assets/demo.gif"/>
+
+## Blazor
+
+```razor
+@page "/counter"
+
+@using SignalsDotnet
+@using R3
+@using SignalsDotnet.Blazor
+
+<TrackedScope>
+    <div>
+        <h1>Counter</h1>
+        <p>
+            Count: @_count.Value <br />
+        </p>
+        
+        <TrackedScope>
+            <p>Now: @_now.Value</p>
+        </TrackedScope>
+
+        <button class="btn btn-primary"
+                @onclick="() => _count.Value++">
+            Click me
+        </button>
+    </div>
+</TrackedScope>
+
+@code {
+    readonly CancellationDisposable _cd = new();
+    readonly Signal<int> _count = new(0);
+    IReadOnlySignal<DateTime> _now = null!;
+
+    protected override void OnInitialized()
+    {
+        _now = Observable
+            .Interval(TimeSpan.FromSeconds(1))
+            .Select(_ => DateTime.Now)
+            .TakeUntil(_cd.Token)
+            .ToSignal();
+    }
+}
+```
 
 # SignalsDotnet
 
-[![NuGet](https://img.shields.io/nuget/v/SignalsDotnet.svg)](https://www.nuget.org/packages/SignalsDotnet)
+[![Core NuGet](https://img.shields.io/nuget/v/SignalsDotnet.svg?label=core%20nuget&color=blue)](https://www.nuget.org/packages/SignalsDotnet)
+[![Blazor NuGet](https://img.shields.io/nuget/v/SignalsDotnet.Blazor.svg?label=blazor%20nuget&color=purple)](https://www.nuget.org/packages/SignalsDotnet.Blazor)
 [![License](https://img.shields.io/github/license/fedeAlterio/SignalsDotnet)](LICENSE)
 
 ## Angular Signals for .NET
-This library is a port of Angular Signals to the .NET world, adapted for .NET MVVM UI frameworks and built on top of [R3](https://github.com/Cysharp/R3) (a variant of ReactiveX).
+This library is a .NET port of Angular Signals, adapted for .NET MVVM UI frameworks and Blazor applications and built on top of [R3](https://github.com/Cysharp/R3) (a variant of ReactiveX).
 
 If you need an introduction to what signals are, see: https://angular.io/guide/signals
 
@@ -37,6 +82,10 @@ If you need an introduction to what signals are, see: https://angular.io/guide/s
   - [Signal Events](#signal-events)
   - [WhenAnyChanged](#whenanychanged)
   - [CancellationSignal](#cancellationsignal)
+- [Blazor Integration](#blazor-integration)
+  - [TrackedScope Component](#trackedscope-component)
+  - [How TrackedScope Works](#how-trackedscope-works)
+  - [Inspiration](#inspiration)
 
 ---
 
@@ -666,6 +715,32 @@ IReadOnlySignal<CancellationToken> cancellationSignal = CancellationSignal.Creat
 // Use the cancellation token in async operations
 await SomeAsyncOperation(cancellationSignal.Value);
 ```
+
+---
+
+## Blazor Integration
+
+The `SignalsDotnet.Blazor` package provides seamless integration with Blazor, allowing Blazor components to automatically re-render when the signals they depend on change.
+
+### Table of Contents
+
+- [TrackedScope Component](#trackedscope-component)
+- [How TrackedScope Works](#how-trackedscope-works)
+- [Inspiration](#inspiration)
+
+### TrackedScope Component
+
+`TrackedScope` is a Razor component that creates a reactive container. Wrap any portion of a Blazor component's markup in a `<TrackedScope>` to automatically track any signals retrieved via their `Value` property during the render. `InvokeAsync(StateHasChanged)` is used behind the scene to dispatch changes on the correct SynchronizationContext.
+
+```razor
+<TrackedScope>
+    <p>Current count is: @_count.Value</p>
+</TrackedScope>
+```
+
+### Inspiration
+
+This Blazor signal integration is inspired by **Steven Giesel**'s excellent blog post, [Signals in Blazor](https://steven-giesel.com/blogPost/495d87ca-61df-4c52-a253-8ba4abc186b7).
 
 ---
 
