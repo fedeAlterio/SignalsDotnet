@@ -1,6 +1,7 @@
-﻿using System.ComponentModel;
+﻿using R3;
+using SignalsDotnet.Internals;
+using System.ComponentModel;
 using System.Runtime.CompilerServices;
-using R3;
 
 namespace SignalsDotnet;
 
@@ -156,5 +157,27 @@ public static partial class Signal
             }
         }
     }
-}
 
+    public static IDisposable TrackedScope(out IDisposable trackingSubscription, Action onSignalChanged)
+    {
+        int anySignalArrived = 0;
+        var signalChangeSubscription = new CompositeDisposable();
+        var signalsRequested = new HashSet<INotifySignalChanged>(ReferenceEqualityComparer<INotifySignalChanged>.Instance);
+        var subscription = SignalsRequested()
+            .Subscribe(signal =>
+            {
+                if (!signalsRequested.Add(signal)) return;
+
+                signal.FutureValues.Subscribe(_ =>
+                {
+                    if (Interlocked.CompareExchange(ref anySignalArrived, 1, 0) == 1) return;
+
+                    signalChangeSubscription.Dispose();
+                    onSignalChanged();
+                }).AddTo(signalChangeSubscription);
+            });
+
+        trackingSubscription = signalChangeSubscription;
+        return subscription;
+    }
+}
