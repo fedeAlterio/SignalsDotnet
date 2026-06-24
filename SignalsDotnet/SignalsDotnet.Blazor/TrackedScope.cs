@@ -25,13 +25,12 @@ public class TrackedScope : ComponentBase, IDisposable
                 if (Equals(_disposable.Disposable, oldDisposable))
                 {
                     _disposable.Disposable = subscription;
+                    builder.AddContent(0, ChildContent);
                 }
                 else
                 {
                     subscription.Dispose();
                 }
-
-                builder.AddContent(0, ChildContent);
             }
         }
     }
