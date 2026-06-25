@@ -1,4 +1,4 @@
-﻿using System.Collections.Specialized;
+using System.Collections.Specialized;
 using R3;
 using SignalsDotnet.Configuration;
 using SignalsDotnet.Internals;
@@ -28,9 +28,10 @@ public partial class Signal
         return new CollectionSignal<TCollection>(collectionChangedConfiguration, propertyChangedConfiguration);
     }
 
-    public static IReadOnlySignal<T> FromObservable<T>(Observable<T> observable, ReadonlySignalConfigurationDelegate<T?>? configuration = null)
+    public static IReadOnlySignal<T> FromObservable<T>(Observable<T> observable,
+                                                       ReadonlySignalConfigurationDelegate<T?>? configuration = null)
     {
-        return new FromObservableSignal<T>(observable, configuration);
+        return observable.ToSignal(configuration);
     }
 }
 
@@ -39,33 +40,52 @@ public static class SignalFactoryExtensions
     public static IReadOnlySignal<T> ToSignal<T>(this Observable<T> @this,
                                                   ReadonlySignalConfigurationDelegate<T?>? configurator = null)
     {
-        return new FromObservableSignal<T>(@this, configurator);
+        return CreateSignal(@this, ResolveConfig(configurator));
     }
 
-    public static ISignal<T> ToLinkedSignal<T>(this Observable<T> @this, 
+    public static ISignal<T> ToLinkedSignal<T>(this Observable<T> @this,
                                                ReadonlySignalConfigurationDelegate<T?>? configurator = null)
     {
-        return new FromObservableSignal<T>(@this, configurator);
+        return CreateSignal(@this, ResolveConfig(configurator));
     }
 
     internal static IAsyncSignal<T> ToAsyncLinkedSignal<T>(this Observable<T> @this,
-                                                           IReadOnlySignal<bool> isExecuting, 
+                                                           IReadOnlySignal<bool> isExecuting,
                                                            ReadonlySignalConfigurationDelegate<T?>? configurator = null)
     {
-        return new FromObservableAsyncSignal<T>(@this, isExecuting, configurator);
+        return CreateAsyncSignal(@this, isExecuting, ResolveConfig(configurator));
     }
 
     internal static IAsyncReadOnlySignal<T> ToAsyncSignal<T>(this Observable<T> @this,
-                                                            IReadOnlySignal<bool> isExecuting,
-                                                            ReadonlySignalConfigurationDelegate<T?>? configurator = null)
+                                                             IReadOnlySignal<bool> isExecuting,
+                                                             ReadonlySignalConfigurationDelegate<T?>? configurator = null)
     {
-        return new FromObservableAsyncSignal<T>(@this, isExecuting, configurator);
+        return CreateAsyncSignal(@this, isExecuting, ResolveConfig(configurator));
     }
 
+    internal static ISignal<T> CreateSignal<T>(Observable<T> observable, ReadonlySignalConfiguration<T?> config)
+    {
+        return config.SubscriptionStrategy == SubscriptionStrategy.RefCount
+            ? new FromObservableSignalRefCounted<T>(observable, config)
+            : new FromObservableSignal<T>(observable, config);
+    }
+
+    internal static IAsyncSignal<T> CreateAsyncSignal<T>(Observable<T> observable, IReadOnlySignal<bool> isExecuting, ReadonlySignalConfiguration<T?> config)
+    {
+        return config.SubscriptionStrategy == SubscriptionStrategy.RefCount
+            ? new FromObservableAsyncSignalRefCounted<T>(observable, isExecuting, config)
+            : new FromObservableAsyncSignal<T>(observable, isExecuting, config);
+    }
 
     public static IReadOnlySignal<TCollection> ToCollectionSignal<TCollection>(this TCollection collection, CollectionChangedSignalConfigurationDelegate? configurator = null)
         where TCollection : INotifyCollectionChanged
     {
         return Signal.FromObservableCollection(collection, configurator);
+    }
+
+    internal static ReadonlySignalConfiguration<T> ResolveConfig<T>(ReadonlySignalConfigurationDelegate<T>? configurator)
+    {
+        var config = ReadonlySignalConfiguration<T>.Default;
+        return configurator is null ? config : configurator(config);
     }
 }

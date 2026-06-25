@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using R3;
 using SignalsDotnet.Configuration;
 using SignalsDotnet.Internals.Helpers;
@@ -9,30 +9,20 @@ internal class FromObservableSignal<T> : ISignal<T>, IEquatable<FromObservableSi
 {
     readonly Observable<T> _observable;
     readonly ReadonlySignalConfiguration<T?> _configuration;
-    int _someoneAskedValue; // 1 means true, 0 means false
+    int _someoneAskedValue;
 
-#pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
-    public FromObservableSignal(Observable<T> observable,
-#pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
-                                ReadonlySignalConfigurationDelegate<T?>? configuration = null)
+#pragma warning disable CS8618
+    internal FromObservableSignal(Observable<T> observable, ReadonlySignalConfiguration<T?> configuration)
+#pragma warning restore CS8618
     {
-        _observable = observable ?? throw new ArgumentNullException(nameof(observable));
-
-        var options = ReadonlySignalConfiguration<T?>.Default;
-        if (configuration != null)
-            options = configuration(options);
-
-        _configuration = options;
+        _observable = observable;
+        _configuration = configuration;
     }
-
 
     /// <summary>
     /// Don't inline this function with a lambda
     /// </summary>
-    void SetValue(T value)
-    {
-        Value = value;
-    }
+    void SetValue(T value) => Value = value;
 
     T _value;
     public T Value
@@ -51,14 +41,10 @@ internal class FromObservableSignal<T> : ISignal<T>, IEquatable<FromObservableSi
 
             var propertyChanged = PropertyChanged;
             if (propertyChanged is null)
-            {
                 return;
-            }
 
             using (Signal.UntrackedScope())
-            {
                 propertyChanged(this, Signal.PropertyChangedArgs);
-            }
         }
     }
 
@@ -67,8 +53,7 @@ internal class FromObservableSignal<T> : ISignal<T>, IEquatable<FromObservableSi
 
     void NotifySomeoneAskedAValue()
     {
-        var someoneAlreadyAskedValue = Interlocked.Exchange(ref _someoneAskedValue, 1) == 1;
-        if (someoneAlreadyAskedValue)
+        if (Interlocked.Exchange(ref _someoneAskedValue, 1) == 1)
             return;
 
         if (_configuration.SubscribeWeakly)
@@ -82,23 +67,16 @@ internal class FromObservableSignal<T> : ISignal<T>, IEquatable<FromObservableSi
 
     public bool Equals(FromObservableSignal<T?>? other)
     {
-        if (other is null)
-            return false;
-        if (ReferenceEquals(this, other))
-            return true;
-
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
         return _configuration.Comparer.Equals(_value, other._value);
     }
 
     public override bool Equals(object? obj)
     {
-        if (obj is null)
-            return false;
-        if (ReferenceEquals(this, obj))
-            return true;
-        if (obj.GetType() != GetType())
-            return false;
-
+        if (obj is null) return false;
+        if (ReferenceEquals(this, obj)) return true;
+        if (obj.GetType() != GetType()) return false;
         return Equals((FromObservableSignal<T?>)obj);
     }
 
@@ -114,9 +92,9 @@ internal class FromObservableSignal<T> : ISignal<T>, IEquatable<FromObservableSi
 
 internal class FromObservableAsyncSignal<T> : FromObservableSignal<T>, IAsyncSignal<T>
 {
-    public FromObservableAsyncSignal(Observable<T> observable,
-                                     IReadOnlySignal<bool> isExecuting,
-                                     ReadonlySignalConfigurationDelegate<T?>? configuration = null) : base(observable, configuration)
+    internal FromObservableAsyncSignal(Observable<T> observable,
+                                       IReadOnlySignal<bool> isExecuting,
+                                       ReadonlySignalConfiguration<T?> configuration) : base(observable, configuration)
     {
         IsComputing = isExecuting;
     }

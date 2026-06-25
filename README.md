@@ -307,6 +307,26 @@ public Signal<int> Counter { get; } = new(config => config with
 **Configuration Options:**
 - `Comparer` - Custom `IEqualityComparer<T>` to determine when to raise PropertyChanged
 - `RaiseOnlyWhenChanged` - Whether to raise PropertyChanged only when value actually changes (default: true)
+- `SubscriptionStrategy` - Controls when the upstream subscription activates:
+  - `Persistent` (default) - Subscribes once on first value access, stays subscribed for life
+  - `RefCount` - Subscribes only while listeners are observing `Values`/`FutureValues`, unsubscribes when all listeners leave (share + ref-count semantics)
+
+**Changing Global Defaults:**
+
+You can change the global default configuration that applies to all newly created signals:
+
+```c#
+// Set new global defaults
+ReadonlySignalConfiguration.Default = new(
+    RaiseOnlyWhenChanged: true,
+    SubscribeWeakly: true,
+    SubscriptionStrategy: SubscriptionStrategy.RefCount
+);
+
+// All new signals will use these defaults
+var signal = new Signal<int>();
+var linkedSignal = Observable.Interval(TimeSpan.FromSeconds(1)).ToSignal();
+```
 
 ### `CollectionSignal<TObservableCollection>`
 
@@ -416,6 +436,10 @@ IReadOnlySignal<ObservableCollection<Person>> signal = collection.ToCollectionSi
 // Create from observable with configuration
 var signal = Observable.Interval(TimeSpan.FromSeconds(1))
                        .ToSignal(config => config with { RaiseOnlyWhenChanged = false });
+
+// Create with ref-count subscription strategy (unsubscribe when no listeners)
+var refCountSignal = Observable.Interval(TimeSpan.FromSeconds(1))
+                               .ToSignal(config => config with { SubscriptionStrategy = SubscriptionStrategy.RefCount });
 ```
 
 ---

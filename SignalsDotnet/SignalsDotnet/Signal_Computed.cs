@@ -46,7 +46,7 @@ public partial class Signal
             valueObservable = valueObservable.Prepend(startValue);
         }
 
-        return new FromObservableSignal<T>(valueObservable, configuration);
+        return valueObservable.ToLinkedSignal(configuration);
     }
 
     internal static Observable<T> ComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func,
