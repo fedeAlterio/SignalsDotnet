@@ -9,9 +9,21 @@ public static partial class Signal
 {
     internal sealed class Scope
     {
+        Subject<INotifySignalChanged>? _subject;
+
         public Scope(Scope? parent) => Parent = parent;
         public Scope? Parent { get; }
-        public Subject<INotifySignalChanged>? Subject { get; set; }
+
+        public Subject<INotifySignalChanged>? Subject => _subject;
+
+        public Subject<INotifySignalChanged> GetOrCreateSubject()
+        {
+            var existing = _subject;
+            if (existing is not null) return existing;
+
+            var created = new Subject<INotifySignalChanged>();
+            return Interlocked.CompareExchange(ref _subject, created, null) ?? created;
+        }
     }
 
     static readonly AsyncLocal<Scope?> _currentScope = new();
@@ -97,20 +109,21 @@ public static partial class Signal
         {
             var current = _currentScope.Value;
             bool shouldClear;
-            Subject<INotifySignalChanged> subject;
+            Scope scope;
 
             if (current is null)
             {
-                subject = new();
-                _currentScope.Value = new Scope(null) { Subject = subject };
+                scope = new Scope(null);
+                _currentScope.Value = scope;
                 shouldClear = true;
             }
             else
             {
-                subject = current.Subject ??= new();
+                scope = current;
                 shouldClear = false;
             }
 
+            var subject = scope.GetOrCreateSubject();
             subject.Subscribe(observer.OnNext, observer.OnErrorResume, observer.OnCompleted);
             return new SignalsRequestedDisposable(shouldClear);
         }
