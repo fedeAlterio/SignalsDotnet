@@ -7,37 +7,31 @@ namespace SignalsDotnet;
 
 public static partial class Signal
 {
-    public record StackState
+    internal sealed class Scope
     {
+        public Scope(Scope? parent) => Parent = parent;
+        public Scope? Parent { get; }
         public Subject<INotifySignalChanged>? Subject { get; set; }
     }
-    static readonly AsyncLocal<Stack<StackState>?> _signalsStack = new();
-    internal static readonly PropertyChangedEventArgs PropertyChangedArgs = new("Value");
-    static readonly StackState _untrackedState = new();
 
-    internal static SignalsRequestedObservable SignalsRequested()
-    {
-        return new SignalsRequestedObservable();
-    }
+    static readonly AsyncLocal<Scope?> _currentScope = new();
+    internal static readonly PropertyChangedEventArgs PropertyChangedArgs = new("Value");
+
+    internal static readonly SignalsRequestedObservable SignalsRequested = new();
 
     public static UntrackedReleaserDisposable UntrackedScope()
     {
-        if (_signalsStack.Value is null) return new(null);
+        var current = _currentScope.Value;
 
-        lock (_signalsStack)
-        {
-            var stack = _signalsStack.Value;
-            if (stack is null || !stack.TryPeek(out var state) || state.Subject is null)
-            {
-                return new(null);
-            }
+        // Only shadow when we're actively tracking; if there's no scope, or the current
+        // scope is already untracked (null Subject), there's nothing to suppress.
+        if (current?.Subject is null) return new(null);
 
-            stack.Push(_untrackedState);
-            return new UntrackedReleaserDisposable(stack);
-        }
+        _currentScope.Value = new Scope(current);
+        return new UntrackedReleaserDisposable(current);
     }
 
-    internal static bool InsideComputed => _signalsStack.Value is { Count: > 0 };
+    internal static bool InsideComputed => _currentScope.Value is not null;
 
     public static async Task<T> Untracked<T>(Func<Task<T>> action)
     {
@@ -93,47 +87,32 @@ public static partial class Signal
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void NotifySignalRequested(INotifySignalChanged signal)
     {
-        var stack = _signalsStack.Value;
-        if (stack is null) return;
-
-        StackState? state;
-        lock (_signalsStack)
-        {
-            stack.TryPeek(out state);
-        }
-
-        state?.Subject?.OnNext(signal);
+        // Lock-free: _currentScope is per-flow, so this is a plain read.
+        _currentScope.Value?.Subject?.OnNext(signal);
     }
 
     internal sealed class SignalsRequestedObservable : Observable<INotifySignalChanged>
     {
         protected override IDisposable SubscribeCore(Observer<INotifySignalChanged> observer)
         {
-            lock (_signalsStack)
+            var current = _currentScope.Value;
+            bool shouldClear;
+            Subject<INotifySignalChanged> subject;
+
+            if (current is null)
             {
-                bool shouldClear;
-                Subject<INotifySignalChanged> subject;
-                var stack = _signalsStack.Value ??= new();
-
-                if (stack.Count == 0)
-                {
-                    subject = new();
-                    stack.Push(new StackState
-                    {
-                        Subject = subject
-                    });
-                    shouldClear = true;
-                }
-                else
-                {
-                    stack.TryPeek(out var state);
-                    subject = state!.Subject ??= new();
-                    shouldClear = false;
-                }
-
-                subject.Subscribe(observer.OnNext, observer.OnErrorResume, observer.OnCompleted);
-                return new SignalsRequestedDisposable(shouldClear);
+                subject = new();
+                _currentScope.Value = new Scope(null) { Subject = subject };
+                shouldClear = true;
             }
+            else
+            {
+                subject = current.Subject ??= new();
+                shouldClear = false;
+            }
+
+            subject.Subscribe(observer.OnNext, observer.OnErrorResume, observer.OnCompleted);
+            return new SignalsRequestedDisposable(shouldClear);
         }
     }
 
@@ -141,23 +120,20 @@ public static partial class Signal
     {
         public void Dispose()
         {
-            if (!shouldClear) return;
-            lock (_signalsStack)
-            {
-                _signalsStack.Value = null;
-            }
+            if (shouldClear)
+                _currentScope.Value = null;
         }
     }
 
-    public readonly struct UntrackedReleaserDisposable(Stack<StackState>? stack) : IDisposable
+    public readonly struct UntrackedReleaserDisposable : IDisposable
     {
+        readonly Scope? _restoreTo;
+        internal UntrackedReleaserDisposable(Scope? restoreTo) => _restoreTo = restoreTo;
+
         public void Dispose()
         {
-            if (stack is null) return;
-            lock (_signalsStack)
-            {
-                stack.Pop();
-            }
+            if (_restoreTo is null) return;
+            _currentScope.Value = _restoreTo;
         }
     }
 
@@ -166,7 +142,7 @@ public static partial class Signal
         int anySignalArrived = 0;
         var signalChangeSubscription = new CompositeDisposable();
         var signalsRequested = new HashSet<INotifySignalChanged>(ReferenceEqualityComparer<INotifySignalChanged>.Instance);
-        var subscription = SignalsRequested()
+        var subscription = SignalsRequested
             .Subscribe(signal =>
             {
                 if (!signalsRequested.Add(signal)) return;
