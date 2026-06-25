@@ -57,6 +57,6 @@ public static partial class Signal
             valueObservable = valueObservable.Prepend(startValue);
         }
 
-        return new FromObservableAsyncSignal<T>(valueObservable, isExecuting, configuration);
+        return SignalFactoryExtensions.CreateAsyncSignal(valueObservable, isExecuting, SignalFactoryExtensions.ResolveConfig(configuration));
     }
 }
