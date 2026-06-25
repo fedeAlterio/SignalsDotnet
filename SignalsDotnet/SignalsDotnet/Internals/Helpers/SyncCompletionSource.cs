@@ -24,4 +24,7 @@ internal sealed class SyncCompletionSource : INotifyCompletion
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void SetCompleted(Unit unit) => Interlocked.Exchange(ref _continuation, ActionStub.Nop)?.Invoke();
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Reset() => Volatile.Write(ref _continuation, null);
 }
