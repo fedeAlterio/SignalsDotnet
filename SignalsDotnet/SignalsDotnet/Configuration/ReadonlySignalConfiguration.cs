@@ -6,5 +6,5 @@ public record ReadonlySignalConfiguration<T>(IEqualityComparer<T> Comparer,
                                              bool SubscribeWeakly,
                                              SubscriptionStrategy SubscriptionStrategy = SubscriptionStrategy.Persistent)
 {
-    public static ReadonlySignalConfiguration<T> Default { get; } = new(EqualityComparer<T>.Default, true, false, SubscriptionStrategy.Persistent);
+    public static ReadonlySignalConfiguration<T> Default { get; set; } = new(EqualityComparer<T>.Default, true, false, SubscriptionStrategy.Persistent);
 }
