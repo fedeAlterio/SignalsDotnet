@@ -311,6 +311,23 @@ public Signal<int> Counter { get; } = new(config => config with
   - `Persistent` (default) - Subscribes once on first value access, stays subscribed for life
   - `RefCount` - Subscribes only while listeners are observing `Values`/`FutureValues`, unsubscribes when all listeners leave (share + ref-count semantics)
 
+**Changing Global Defaults:**
+
+You can change the global default configuration that applies to all newly created signals:
+
+```c#
+// Set new global defaults
+ReadonlySignalConfiguration.Default = new(
+    RaiseOnlyWhenChanged: true,
+    SubscribeWeakly: true,
+    SubscriptionStrategy: SubscriptionStrategy.RefCount
+);
+
+// All new signals will use these defaults
+var signal = new Signal<int>();
+var linkedSignal = Observable.Interval(TimeSpan.FromSeconds(1)).ToSignal();
+```
+
 ### `CollectionSignal<TObservableCollection>`
 
 A `CollectionSignal<TObservableCollection>` wraps an `ObservableCollection` (or any `INotifyCollectionChanged`) and listens to both:
