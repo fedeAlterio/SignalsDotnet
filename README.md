@@ -307,6 +307,9 @@ public Signal<int> Counter { get; } = new(config => config with
 **Configuration Options:**
 - `Comparer` - Custom `IEqualityComparer<T>` to determine when to raise PropertyChanged
 - `RaiseOnlyWhenChanged` - Whether to raise PropertyChanged only when value actually changes (default: true)
+- `SubscriptionStrategy` - Controls when the upstream subscription activates:
+  - `Persistent` (default) - Subscribes once on first value access, stays subscribed for life
+  - `RefCount` - Subscribes only while listeners are observing `Values`/`FutureValues`, unsubscribes when all listeners leave (share + ref-count semantics)
 
 ### `CollectionSignal<TObservableCollection>`
 
@@ -416,6 +419,10 @@ IReadOnlySignal<ObservableCollection<Person>> signal = collection.ToCollectionSi
 // Create from observable with configuration
 var signal = Observable.Interval(TimeSpan.FromSeconds(1))
                        .ToSignal(config => config with { RaiseOnlyWhenChanged = false });
+
+// Create with ref-count subscription strategy (unsubscribe when no listeners)
+var refCountSignal = Observable.Interval(TimeSpan.FromSeconds(1))
+                               .ToSignal(config => config with { SubscriptionStrategy = SubscriptionStrategy.RefCount });
 ```
 
 ---
