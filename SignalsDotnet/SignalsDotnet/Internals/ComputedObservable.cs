@@ -81,6 +81,7 @@ internal sealed class ComputedObservable<T> : Observable<T>
                 try
                 {
                     var token = _disposed.Token;
+                    using var _ = token.Register(static x => ((SyncCompletionSource)x!).SetCompleted(Unit.Default), _signalChangedAwaitable);
                     do
                     {
                         var result = await ComputeResult(token);
@@ -91,7 +92,6 @@ internal sealed class ComputedObservable<T> : Observable<T>
                             _observer.OnNext(propertyValue);
                         }
 
-                        await using var _ = token.Register(static x => ((SyncCompletionSource)x!).SetCompleted(Unit.Default), _signalChangedAwaitable);
                         await _signalChangedAwaitable;
                         _disconnectSubscription.Dispose();
                     } while (!token.IsCancellationRequested);
@@ -128,7 +128,7 @@ internal sealed class ComputedObservable<T> : Observable<T>
                 _cts = null;
             }
 
-            var signalRequestedSubscription = Signal.SignalsRequested().Subscribe(_onSignalRequested);
+            var signalRequestedSubscription = Signal.SignalsRequested.Subscribe(_onSignalRequested);
 
             try
             {
