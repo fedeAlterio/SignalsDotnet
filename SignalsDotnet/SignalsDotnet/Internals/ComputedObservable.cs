@@ -31,11 +31,47 @@ internal sealed class ComputedObservable<T> : Observable<T>
         readonly CancellationTokenSource _disposed = new();
         DisposableBag _disconnectSubscription;
 
+        readonly HashSet<INotifySignalChanged> _signalsRequested = new(ReferenceEqualityComparer<INotifySignalChanged>.Instance);
+        readonly SyncCompletionSource _signalChangedAwaitable = new();
+        DisposableBag _signalChangeSubscription;
+        int _anySignalArrived;
+        CancellationTokenSource? _cts;
+        readonly Action<INotifySignalChanged> _onSignalRequested;
+        readonly Action<Unit> _onSignalChanged;
+        readonly Action<Unit> _setCompleted;
+
         public Subscription(ComputedObservable<T> observable, Observer<T> observer)
         {
             _observable = observable;
             _observer = observer;
+            _onSignalRequested = OnSignalRequested;
+            _onSignalChanged = OnSignalChanged;
+            _setCompleted = _signalChangedAwaitable.SetCompleted;
             WatchSignalsChanges();
+        }
+
+        void OnSignalRequested(INotifySignalChanged signal)
+        {
+            if (!_signalsRequested.Add(signal)) return;
+            signal.FutureValues.Subscribe(_onSignalChanged).AddTo(ref _signalChangeSubscription);
+        }
+
+        void OnSignalChanged(Unit _)
+        {
+            if (Interlocked.CompareExchange(ref _anySignalArrived, 1, 0) == 1) return;
+
+            _signalChangeSubscription.Dispose();
+            _cts?.Cancel();
+            var scheduler = _observable._scheduler;
+            if (scheduler is not null)
+            {
+                scheduler(Unit.Default).Subscribe(_setCompleted)
+                                       .AddTo(ref _disconnectSubscription);
+            }
+            else
+            {
+                _signalChangedAwaitable.SetCompleted(Unit.Default);
+            }
         }
 
         async void WatchSignalsChanges()
@@ -50,19 +86,19 @@ internal sealed class ComputedObservable<T> : Observable<T>
                         var result = await ComputeResult(token);
                         if (token.IsCancellationRequested) return;
 
-                        if (result.ResultOptional.TryGetValue(out var propertyValue))
+                        if (result.TryGetValue(out var propertyValue))
                         {
                             _observer.OnNext(propertyValue);
                         }
 
-                        await using var _ = token.Register(static x => ((SyncCompletionSource)x!).SetCompleted(Unit.Default), result.SignalChangedAwaitable);
-                        await result.SignalChangedAwaitable;
+                        await using var _ = token.Register(static x => ((SyncCompletionSource)x!).SetCompleted(Unit.Default), _signalChangedAwaitable);
+                        await _signalChangedAwaitable;
                         _disconnectSubscription.Dispose();
                     } while (!token.IsCancellationRequested);
                 }
                 finally
                 {
-                    // It's okay "double" dispose it
+                    // It's okay to "double" dispose it
                     _disconnectSubscription.Dispose();
                 }
             }
@@ -72,56 +108,33 @@ internal sealed class ComputedObservable<T> : Observable<T>
             }
         }
 
-        async ValueTask<ComputationResult> ComputeResult(CancellationToken cancellationToken)
+        async ValueTask<Optional<T>> ComputeResult(CancellationToken cancellationToken)
         {
-            var signalsRequested = new HashSet<INotifySignalChanged>(ReferenceEqualityComparer<INotifySignalChanged>.Instance);
-            Optional<T> result;
+            _signalsRequested.Clear();
+            _signalChangedAwaitable.Reset();
+            _anySignalArrived = 0;
 
             _disconnectSubscription = new();
-            var signalChangeSubscription = new DisposableBag().AddTo(ref _disconnectSubscription);
-            var signalChangedAwaitable = new SyncCompletionSource();
-            CancellationTokenSource? cts;
+            _signalChangeSubscription = new DisposableBag().AddTo(ref _disconnectSubscription);
+
             if (_observable._concurrentChangeStrategy == ConcurrentChangeStrategy.CancelCurrent)
             {
-                cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                cancellationToken = cts.Token;
-                cts.AddTo(ref _disconnectSubscription);
+                _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                cancellationToken = _cts.Token;
+                _cts.AddTo(ref _disconnectSubscription);
             }
             else
             {
-                cts = null;
+                _cts = null;
             }
 
-            int anySignalArrived = 0;
-            var signalRequestedSubscription = Signal.SignalsRequested()
-                                                    .Subscribe(signal =>
-                                                    {
-                                                        if (!signalsRequested.Add(signal)) return;
-
-                                                        signal.FutureValues.Subscribe(_ =>
-                                                        {
-                                                            if (Interlocked.CompareExchange(ref anySignalArrived, 1, 0) == 1) return;
-
-                                                            signalChangeSubscription.Dispose();
-                                                            cts?.Cancel();
-                                                            var scheduler = _observable._scheduler;
-                                                            if (scheduler is not null)
-                                                            {
-                                                                scheduler(Unit.Default).Subscribe(signalChangedAwaitable.SetCompleted)
-                                                                                       .AddTo(ref _disconnectSubscription);
-                                                            }
-                                                            else
-                                                            {
-                                                                signalChangedAwaitable.SetCompleted(Unit.Default);
-                                                            }
-                                                        }).AddTo(ref signalChangeSubscription);
-                                                    });
+            var signalRequestedSubscription = Signal.SignalsRequested().Subscribe(_onSignalRequested);
 
             try
             {
                 try
                 {
-                    result = new(await _observable._func(cancellationToken));
+                    return new(await _observable._func(cancellationToken));
                 }
                 finally
                 {
@@ -130,26 +143,20 @@ internal sealed class ComputedObservable<T> : Observable<T>
             }
             catch (OperationCanceledException)
             {
-                result = Optional<T>.Empty;
+                return Optional<T>.Empty;
             }
             catch
             {
-                // If something fails, the property will have the previous result,
-                // We still have to observe for the properties to change (maybe next time the exception will not be thrown)
                 try
                 {
-                    result = _observable._fallbackValue();
+                    return _observable._fallbackValue();
                 }
                 catch
                 {
-                    result = Optional<T>.Empty;
+                    return Optional<T>.Empty;
                 }
             }
-
-
-            return new(signalChangedAwaitable, result);
         }
-
 
         public void Dispose()
         {
@@ -158,7 +165,6 @@ internal sealed class ComputedObservable<T> : Observable<T>
         }
     }
 
-    readonly record struct ComputationResult(SyncCompletionSource SignalChangedAwaitable, Optional<T> ResultOptional);
 }
 
 internal sealed class ActionStub

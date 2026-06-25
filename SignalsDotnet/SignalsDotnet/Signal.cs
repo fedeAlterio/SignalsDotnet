@@ -13,6 +13,7 @@ public static partial class Signal
     }
     static readonly AsyncLocal<Stack<StackState>?> _signalsStack = new();
     internal static readonly PropertyChangedEventArgs PropertyChangedArgs = new("Value");
+    static readonly StackState _untrackedState = new();
 
     internal static SignalsRequestedObservable SignalsRequested()
     {
@@ -21,6 +22,8 @@ public static partial class Signal
 
     public static UntrackedReleaserDisposable UntrackedScope()
     {
+        if (_signalsStack.Value is null) return new(null);
+
         lock (_signalsStack)
         {
             var stack = _signalsStack.Value;
@@ -29,7 +32,7 @@ public static partial class Signal
                 return new(null);
             }
 
-            stack.Push(new());
+            stack.Push(_untrackedState);
             return new UntrackedReleaserDisposable(stack);
         }
     }
@@ -90,16 +93,16 @@ public static partial class Signal
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void NotifySignalRequested(INotifySignalChanged signal)
     {
-        StackState state;
+        var stack = _signalsStack.Value;
+        if (stack is null) return;
+
+        StackState? state;
         lock (_signalsStack)
         {
-            if (_signalsStack.Value?.TryPeek(out state!) is not true)
-            {
-                return;
-            }
+            stack.TryPeek(out state);
         }
 
-        state.Subject?.OnNext(signal);
+        state?.Subject?.OnNext(signal);
     }
 
     internal sealed class SignalsRequestedObservable : Observable<INotifySignalChanged>
