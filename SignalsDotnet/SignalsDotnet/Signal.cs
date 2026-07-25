@@ -7,37 +7,43 @@ namespace SignalsDotnet;
 
 public static partial class Signal
 {
-    public record StackState
+    internal sealed class Scope
     {
-        public Subject<INotifySignalChanged>? Subject { get; set; }
-    }
-    static readonly AsyncLocal<Stack<StackState>?> _signalsStack = new();
-    internal static readonly PropertyChangedEventArgs PropertyChangedArgs = new("Value");
-    static readonly StackState _untrackedState = new();
+        Subject<INotifySignalChanged>? _subject;
 
-    internal static SignalsRequestedObservable SignalsRequested()
-    {
-        return new SignalsRequestedObservable();
-    }
+        public Scope(Scope? parent) => Parent = parent;
+        public Scope? Parent { get; }
 
-    public static UntrackedReleaserDisposable UntrackedScope()
-    {
-        if (_signalsStack.Value is null) return new(null);
+        public Subject<INotifySignalChanged>? Subject => _subject;
 
-        lock (_signalsStack)
+        public Subject<INotifySignalChanged> GetOrCreateSubject()
         {
-            var stack = _signalsStack.Value;
-            if (stack is null || !stack.TryPeek(out var state) || state.Subject is null)
-            {
-                return new(null);
-            }
+            var existing = _subject;
+            if (existing is not null) return existing;
 
-            stack.Push(_untrackedState);
-            return new UntrackedReleaserDisposable(stack);
+            var created = new Subject<INotifySignalChanged>();
+            return Interlocked.CompareExchange(ref _subject, created, null) ?? created;
         }
     }
 
-    internal static bool InsideComputed => _signalsStack.Value is { Count: > 0 };
+    static readonly AsyncLocal<Scope?> _currentScope = new();
+    internal static readonly PropertyChangedEventArgs PropertyChangedArgs = new("Value");
+
+    internal static readonly SignalsRequestedObservable SignalsRequested = new();
+
+    public static UntrackedReleaserDisposable UntrackedScope()
+    {
+        var current = _currentScope.Value;
+
+        // Only shadow when we're actively tracking; if there's no scope, or the current
+        // scope is already untracked (null Subject), there's nothing to suppress.
+        if (current?.Subject is null) return new(null);
+
+        _currentScope.Value = new Scope(current);
+        return new UntrackedReleaserDisposable(current);
+    }
+
+    internal static bool InsideComputed => _currentScope.Value is not null;
 
     public static async Task<T> Untracked<T>(Func<Task<T>> action)
     {
@@ -93,47 +99,33 @@ public static partial class Signal
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void NotifySignalRequested(INotifySignalChanged signal)
     {
-        var stack = _signalsStack.Value;
-        if (stack is null) return;
-
-        StackState? state;
-        lock (_signalsStack)
-        {
-            stack.TryPeek(out state);
-        }
-
-        state?.Subject?.OnNext(signal);
+        // Lock-free: _currentScope is per-flow, so this is a plain read.
+        _currentScope.Value?.Subject?.OnNext(signal);
     }
 
     internal sealed class SignalsRequestedObservable : Observable<INotifySignalChanged>
     {
         protected override IDisposable SubscribeCore(Observer<INotifySignalChanged> observer)
         {
-            lock (_signalsStack)
+            var current = _currentScope.Value;
+            bool shouldClear;
+            Scope scope;
+
+            if (current is null)
             {
-                bool shouldClear;
-                Subject<INotifySignalChanged> subject;
-                var stack = _signalsStack.Value ??= new();
-
-                if (stack.Count == 0)
-                {
-                    subject = new();
-                    stack.Push(new StackState
-                    {
-                        Subject = subject
-                    });
-                    shouldClear = true;
-                }
-                else
-                {
-                    stack.TryPeek(out var state);
-                    subject = state!.Subject ??= new();
-                    shouldClear = false;
-                }
-
-                subject.Subscribe(observer.OnNext, observer.OnErrorResume, observer.OnCompleted);
-                return new SignalsRequestedDisposable(shouldClear);
+                scope = new Scope(null);
+                _currentScope.Value = scope;
+                shouldClear = true;
             }
+            else
+            {
+                scope = current;
+                shouldClear = false;
+            }
+
+            var subject = scope.GetOrCreateSubject();
+            subject.Subscribe(observer.OnNext, observer.OnErrorResume, observer.OnCompleted);
+            return new SignalsRequestedDisposable(shouldClear);
         }
     }
 
@@ -141,23 +133,20 @@ public static partial class Signal
     {
         public void Dispose()
         {
-            if (!shouldClear) return;
-            lock (_signalsStack)
-            {
-                _signalsStack.Value = null;
-            }
+            if (shouldClear)
+                _currentScope.Value = null;
         }
     }
 
-    public readonly struct UntrackedReleaserDisposable(Stack<StackState>? stack) : IDisposable
+    public readonly struct UntrackedReleaserDisposable : IDisposable
     {
+        readonly Scope? _restoreTo;
+        internal UntrackedReleaserDisposable(Scope? restoreTo) => _restoreTo = restoreTo;
+
         public void Dispose()
         {
-            if (stack is null) return;
-            lock (_signalsStack)
-            {
-                stack.Pop();
-            }
+            if (_restoreTo is null) return;
+            _currentScope.Value = _restoreTo;
         }
     }
 
@@ -166,7 +155,7 @@ public static partial class Signal
         int anySignalArrived = 0;
         var signalChangeSubscription = new CompositeDisposable();
         var signalsRequested = new HashSet<INotifySignalChanged>(ReferenceEqualityComparer<INotifySignalChanged>.Instance);
-        var subscription = SignalsRequested()
+        var subscription = SignalsRequested
             .Subscribe(signal =>
             {
                 if (!signalsRequested.Add(signal)) return;
