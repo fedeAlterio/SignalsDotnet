@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using FluentAssertions;
 using R3;
 using SignalsDotnet.Configuration;
@@ -354,6 +355,81 @@ public class FromObservableSignalRefCountTests
         unsubscribeCount.Should().Be(1);
     }
 
+
+    [Fact]
+    public async Task RefCount_PropertyChanged_SubscribesUpstream_WhenFirstHandlerAttaches()
+    {
+        await this.SwitchToMainThread();
+
+        var subscribeCount = 0;
+        var subject = new Subject<int>();
+        var upstream = new TrackingObservable<int>(subject, () => subscribeCount++, () => { });
+        var signal = upstream.ToSignal(x => x with { SubscriptionStrategy = SubscriptionStrategy.RefCount });
+        var notifier = (INotifyPropertyChanged)signal;
+
+        PropertyChangedEventHandler handler = (_, _) => { };
+        notifier.PropertyChanged += handler;
+
+        subscribeCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task RefCount_PropertyChanged_ReceivesUpstreamValues()
+    {
+        await this.SwitchToMainThread();
+
+        var subject = new Subject<int>();
+        var signal = ((Observable<int>)subject).ToSignal(x => x with { SubscriptionStrategy = SubscriptionStrategy.RefCount });
+        var notifier = (INotifyPropertyChanged)signal;
+
+        var raiseCount = 0;
+        PropertyChangedEventHandler handler = (_, _) => raiseCount++;
+        notifier.PropertyChanged += handler;
+
+        subject.OnNext(1);
+        subject.OnNext(2);
+
+        raiseCount.Should().Be(2);
+        signal.Value.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task RefCount_PropertyChanged_UnsubscribesUpstream_WhenLastHandlerDetaches()
+    {
+        await this.SwitchToMainThread();
+
+        var unsubscribeCount = 0;
+        var subject = new Subject<int>();
+        var upstream = new TrackingObservable<int>(subject, () => { }, () => unsubscribeCount++);
+        var signal = upstream.ToSignal(x => x with { SubscriptionStrategy = SubscriptionStrategy.RefCount });
+        var notifier = (INotifyPropertyChanged)signal;
+
+        PropertyChangedEventHandler handler = (_, _) => { };
+        notifier.PropertyChanged += handler;
+        unsubscribeCount.Should().Be(0);
+
+        notifier.PropertyChanged -= handler;
+        unsubscribeCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task RefCount_PropertyChangedAndFutureValues_ShareOneUpstreamSubscription()
+    {
+        await this.SwitchToMainThread();
+
+        var subscribeCount = 0;
+        var subject = new Subject<int>();
+        var upstream = new TrackingObservable<int>(subject, () => subscribeCount++, () => { });
+        var signal = upstream.ToSignal(x => x with { SubscriptionStrategy = SubscriptionStrategy.RefCount });
+        var notifier = (INotifyPropertyChanged)signal;
+
+        using var sub = signal.FutureValues.Subscribe(_ => { });
+
+        PropertyChangedEventHandler handler = (_, _) => { };
+        notifier.PropertyChanged += handler;
+
+        subscribeCount.Should().Be(1);
+    }
 
     sealed class SyncEmitObservable<T>(T value) : Observable<T>
     {

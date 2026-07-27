@@ -276,8 +276,10 @@ public class DictionarySignal<TKey, TValue> : IDictionary<TKey, TValue> where TK
             var newCount = Interlocked.Decrement(ref _subscriptionCount);
             if (newCount != 0)
                 return;
+           
+            if (dictionary.KeySignals.TryGetValue(key, out var current) && ReferenceEquals(current, this))
+                dictionary.KeySignals.Remove(key);
 
-            dictionary.KeySignals.Remove(key);
             dictionary._keysChanged.Invoke();
         }
 

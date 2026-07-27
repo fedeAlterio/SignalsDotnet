@@ -38,7 +38,7 @@ internal class FromObservableSignalRefCounted<T> : ISignal<T>, IEquatable<FromOb
 
             _value = value;
 
-            var propertyChanged = PropertyChanged;
+            var propertyChanged = _propertyChangedCore;
             if (propertyChanged is null)
                 return;
 
@@ -46,6 +46,9 @@ internal class FromObservableSignalRefCounted<T> : ISignal<T>, IEquatable<FromOb
                 propertyChanged(this, Signal.PropertyChangedArgs);
         }
     }
+
+   
+    PropertyChangedEventHandler? _propertyChangedCore;
 
     public T UntrackedValue => _value;
     object? IReadOnlySignal.UntrackedValue => UntrackedValue;
@@ -79,10 +82,10 @@ internal class FromObservableSignalRefCounted<T> : ISignal<T>, IEquatable<FromOb
     }
 
     public Observable<T> Values =>
-        new RefCountObservable<T>(this.OnPropertyChanged(false), OnSubscribe, OnUnsubscribe, activateUpstreamFirst: true);
+        new RefCountObservable<T>(new RawPropertyChangedObservable<T>(this, false), OnSubscribe, OnUnsubscribe, activateUpstreamFirst: true);
 
     public Observable<T> FutureValues =>
-        new RefCountObservable<T>(this.OnPropertyChanged(true), OnSubscribe, OnUnsubscribe, activateUpstreamFirst: false);
+        new RefCountObservable<T>(new RawPropertyChangedObservable<T>(this, true), OnSubscribe, OnUnsubscribe, activateUpstreamFirst: false);
 
     public bool Equals(FromObservableSignalRefCounted<T?>? other)
     {
@@ -103,13 +106,29 @@ internal class FromObservableSignalRefCounted<T> : ISignal<T>, IEquatable<FromOb
     public static bool operator !=(FromObservableSignalRefCounted<T> a, FromObservableSignalRefCounted<T> b) => !(a == b);
 
     public override int GetHashCode() => _value is null ? 0 : _configuration.Comparer.GetHashCode(_value);
-    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public event PropertyChangedEventHandler? PropertyChanged
+    {
+        // A direct PropertyChanged subscriber bypasses Values/FutureValues entirely (e.g. WPF
+        // bindings via INotifyPropertyChanged), so it must ref-count the upstream itself here -
+        // otherwise the upstream observable is never activated and the value never updates.
+        add
+        {
+            _propertyChangedCore += value;
+            OnSubscribe();
+        }
+        remove
+        {
+            _propertyChangedCore -= value;
+            OnUnsubscribe();
+        }
+    }
 
     Observable<Unit> IReadOnlySignal.Values =>
-        new RefCountObservable<Unit>(this.OnPropertyChangedAsUnit(false), OnSubscribe, OnUnsubscribe, activateUpstreamFirst: true);
+        new RefCountObservable<Unit>(new RawPropertyChangedObservableUnit(this, false), OnSubscribe, OnUnsubscribe, activateUpstreamFirst: true);
 
     Observable<Unit> INotifySignalChanged.FutureValues =>
-        new RefCountObservable<Unit>(this.OnPropertyChangedAsUnit(true), OnSubscribe, OnUnsubscribe, activateUpstreamFirst: false);
+        new RefCountObservable<Unit>(new RawPropertyChangedObservableUnit(this, true), OnSubscribe, OnUnsubscribe, activateUpstreamFirst: false);
 
 
     sealed class RefCountObservable<TItem>(Observable<TItem> inner, Action onSubscribe, Action onUnsubscribe, bool activateUpstreamFirst) : Observable<TItem>
@@ -143,6 +162,41 @@ internal class FromObservableSignalRefCounted<T> : ISignal<T>, IEquatable<FromOb
                 onUnsubscribe();
             }
         }
+    }
+
+    // Subscribes directly to _propertyChangedCore rather than the public PropertyChanged event,
+    // so building Values/FutureValues doesn't ref-count the upstream a second time.
+    sealed class RawPropertyChangedObservable<TValue>(FromObservableSignalRefCounted<TValue> signal, bool futureChangesOnly) : Observable<TValue>
+    {
+        protected override IDisposable SubscribeCore(Observer<TValue> observer)
+        {
+            void OnPropertyChanged(object? sender, PropertyChangedEventArgs e) => observer.OnNext(signal.Value);
+
+            if (!futureChangesOnly)
+                observer.OnNext(signal.Value);
+
+            signal._propertyChangedCore += OnPropertyChanged;
+            return new UnsubscribeDisposable(() => signal._propertyChangedCore -= OnPropertyChanged);
+        }
+    }
+
+    sealed class RawPropertyChangedObservableUnit(FromObservableSignalRefCounted<T> signal, bool futureChangesOnly) : Observable<Unit>
+    {
+        protected override IDisposable SubscribeCore(Observer<Unit> observer)
+        {
+            void OnPropertyChanged(object? sender, PropertyChangedEventArgs e) => observer.OnNext(Unit.Default);
+
+            if (!futureChangesOnly)
+                observer.OnNext(Unit.Default);
+
+            signal._propertyChangedCore += OnPropertyChanged;
+            return new UnsubscribeDisposable(() => signal._propertyChangedCore -= OnPropertyChanged);
+        }
+    }
+
+    sealed class UnsubscribeDisposable(Action unsubscribe) : IDisposable
+    {
+        public void Dispose() => unsubscribe();
     }
 }
 
