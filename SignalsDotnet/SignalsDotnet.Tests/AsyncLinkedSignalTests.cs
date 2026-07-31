@@ -124,7 +124,7 @@ public class AsyncLinkedSignalTests
         await linked.Values.Where(x => x == 0)
                  .Take(1)
                  .WaitAsync()
-                 .ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
+                 .ConfigureAwait(ConfigureAwaitOptions.ForceYielding | ConfigureAwaitOptions.ContinueOnCapturedContext);
 
         linked.Values.Skip(1).Subscribe(_ => notifiedCount++);
         await middleComputationTcs.Task;
@@ -189,7 +189,7 @@ public class AsyncLinkedSignalTests
         await asyncLinked.Values
                            .Timeout(TimeSpan.FromSeconds(1))
                            .FirstAsync(x => x == 5)
-                           .ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
+                           .ConfigureAwait(ConfigureAwaitOptions.ForceYielding | ConfigureAwaitOptions.ContinueOnCapturedContext);
     }
 
     [Fact]

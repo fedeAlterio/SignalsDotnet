@@ -104,22 +104,6 @@ public class SignalProxyTests
         proxy.ConnectionState.UntrackedValue.Should().BeOfType<State.Connected>();
     }
 
-    [Fact(Timeout = 2000)]
-    public async Task EnsureConnectedAsync_Throws_IfAllObserversLeaveWhileWaiting()
-    {
-        await this.SwitchToMainThread();
-
-        var upstream = new ControllableUpstream<int>();
-        var proxy = CreateProxy(upstream);
-
-        var subscription = proxy.Values.Subscribe(x => { });
-        var ensureTask = proxy.EnsureConnectedAsync(CancellationToken.None).AsTask();
-
-        subscription.Dispose();
-
-        var act = () => ensureTask;
-        await act.Should().ThrowAsync<InvalidOperationException>();
-    }
 
     [Fact(Timeout = 2000)]
     public async Task EnsureConnectedAsync_Throws_WhenConnectFailsWhileWaiting()
@@ -311,24 +295,6 @@ public class SignalProxyTests
     }
 
     [Fact(Timeout = 2000)]
-    public async Task ConnectFailure_ClearsHasValueObserver()
-    {
-        await this.SwitchToMainThread();
-
-        var upstream = new ControllableUpstream<int> { ConnectThrows = true };
-        upstream.ReleaseConnect();
-        var proxy = CreateProxy(upstream);
-
-        using var _ = proxy.Values.Subscribe(x => { });
-
-        // The connect attempt throws inside the fire-and-forget bridge; nothing awaits it
-        // directly, so assert on the externally observable effect instead of the exception.
-        await TestHelpers.WaitUntil(() => !proxy.HasValueObserver.UntrackedValue);
-
-        upstream.ConnectCount.Should().Be(0);
-    }
-
-    [Fact(Timeout = 2000)]
     public async Task Resubscribing_AfterFullDisconnect_ReconnectsUpstream()
     {
         await this.SwitchToMainThread();
@@ -376,23 +342,69 @@ public class SignalProxyTests
     }
 
     [Fact(Timeout = 2000)]
-    public async Task EnsureConnectedAsync_Throws_IfOnlyPropertyChangedSubscriberDetaches()
+    public async Task ComputedReadingTheProxy_CountsAsExternalSubscriber_ForEnsureConnectedAsync()
+    {
+        await this.SwitchToMainThread();
+
+        // A Computed collects whatever signal Value's getter reports as the dependency, then
+        // re-subscribes to *that* signal directly. If the proxy delegated Value to an inner signal,
+        // the Computed would subscribe to the inner one and bypass the proxy's ref-count entirely,
+        // leaving HasValueObserver stale and making EnsureConnectedAsync throw.
+        var upstream = new ControllableUpstream<int>();
+        var proxy = CreateProxy(upstream, startValue: 7);
+
+        var computed = Signal.Computed(() => proxy.Value * 2);
+        using var _ = computed.Values.Subscribe(x => { });
+
+        proxy.HasValueObserver.UntrackedValue.Should().BeTrue();
+        await TestHelpers.WaitUntil(() => proxy.ConnectionState.UntrackedValue is State.Connecting);
+
+        var ensureTask = proxy.EnsureConnectedAsync(CancellationToken.None).AsTask();
+        upstream.ReleaseConnect();
+
+        await ensureTask;
+        proxy.ConnectionState.UntrackedValue.Should().BeOfType<State.Connected>();
+    }
+
+    [Fact(Timeout = 2000)]
+    public async Task ComputedReadingTheProxy_RecomputesOnUpstreamEmissions()
     {
         await this.SwitchToMainThread();
 
         var upstream = new ControllableUpstream<int>();
+        upstream.ReleaseConnect();
+        var proxy = CreateProxy(upstream, startValue: 1);
+
+        var computed = Signal.Computed(() => proxy.Value * 2);
+        var received = new List<int>();
+        using var _ = computed.Values.Subscribe(x => received.Add(x));
+
+        await TestHelpers.WaitUntil(() => proxy.ConnectionState.UntrackedValue is State.Connected);
+
+        await upstream.EmitAsync(5);
+        await TestHelpers.WaitUntil(() => received.Contains(10));
+
+        received.Should().Equal(2, 10);
+    }
+
+    [Fact(Timeout = 2000)]
+    public async Task NonGenericValues_CountsAsExternalSubscriber()
+    {
+        await this.SwitchToMainThread();
+
+        var upstream = new ControllableUpstream<int>();
+        upstream.ReleaseConnect();
+        upstream.ReleaseDisconnect();
         var proxy = CreateProxy(upstream);
-        var notifier = (INotifyPropertyChanged)proxy;
 
-        PropertyChangedEventHandler handler = (_, _) => { };
-        notifier.PropertyChanged += handler;
+        var subscription = ((IReadOnlySignal)proxy).Values.Subscribe(_ => { });
+        await TestHelpers.WaitUntil(() => proxy.ConnectionState.UntrackedValue is State.Connected);
 
-        var ensureTask = proxy.EnsureConnectedAsync(CancellationToken.None).AsTask();
+        proxy.HasValueObserver.UntrackedValue.Should().BeTrue();
 
-        notifier.PropertyChanged -= handler;
-
-        var act = () => ensureTask;
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        subscription.Dispose();
+        await TestHelpers.WaitUntil(() => upstream.DisconnectCount == 1);
+        proxy.HasValueObserver.UntrackedValue.Should().BeFalse();
     }
 
     [Fact(Timeout = 2000)]

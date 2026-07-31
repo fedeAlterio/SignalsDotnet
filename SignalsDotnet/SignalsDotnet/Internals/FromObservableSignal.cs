@@ -19,6 +19,13 @@ internal class FromObservableSignal<T> : ISignal<T>, IEquatable<FromObservableSi
         _configuration = configuration;
     }
 
+    internal FromObservableSignal(Observable<T> observable, T startValue, ReadonlySignalConfiguration<T?> configuration)
+    {
+        _observable = observable;
+        _configuration = configuration;
+        _value = startValue;
+    }
+
     /// <summary>
     /// Don't inline this function with a lambda
     /// </summary>

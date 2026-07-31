@@ -42,7 +42,9 @@ internal class FromObservableCollectionSignal<T> : IReadOnlySignal<T> where T : 
 
     object IReadOnlySignal.UntrackedValue => UntrackedValue;
     public T UntrackedValue => _value;
+#pragma warning disable CS0067
     public event PropertyChangedEventHandler? PropertyChanged;
+#pragma warning restore CS0067
 
     Observable<Unit> IReadOnlySignal.Values => _collectionChanged.Prepend(Unit.Default);
     Observable<Unit> INotifySignalChanged.FutureValues => _collectionChanged;

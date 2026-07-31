@@ -21,6 +21,10 @@ jobs:
       run: dotnet build -c Release  ./SignalsDotnet --no-restore
     - name: Test
       run: dotnet test -c Release  ./SignalsDotnet/SignalsDotnet.Tests --no-build --verbosity normal
+    - name: Test Redis store
+      run: dotnet test -c Release  ./SignalsDotnet/SignalsStore/SignalsDotnet.SignalsStore.Redis.Tests --no-build --verbosity normal
+    - name: Test SignalR store
+      run: dotnet test -c Release  ./SignalsDotnet/SignalsStore/SignalsDotnet.SignalsStore.SignalR.Tests --no-build --verbosity normal
     - name: Benchmarks
       run: | 
         dotnet build -c Release  ./SignalsDotnet/SignalsDotnet.PeformanceTests/ 

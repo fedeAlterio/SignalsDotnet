@@ -7,8 +7,18 @@ namespace SignalsDotnet.Internals;
 
 internal class FromObservableSignalRefCounted<T> : ISignal<T>, IEquatable<FromObservableSignalRefCounted<T?>>
 {
-    readonly Observable<T> _observable;
+    Observable<T> _observable;
     readonly ReadonlySignalConfiguration<T?> _configuration;
+
+    /// <summary>
+    /// Settable by derived types whose upstream can only be built after base construction (it needs
+    /// a reference to the fully-formed instance). Must be assigned before any subscription happens.
+    /// </summary>
+    protected Observable<T> Observable
+    {
+        get => _observable;
+        set => _observable = value;
+    }
 
     int _subscriberCount;
     IDisposable? _upstreamSubscription;
@@ -20,6 +30,24 @@ internal class FromObservableSignalRefCounted<T> : ISignal<T>, IEquatable<FromOb
     {
         _observable = observable;
         _configuration = configuration;
+    }
+
+    internal FromObservableSignalRefCounted(Observable<T> observable, T startValue, ReadonlySignalConfiguration<T?> configuration)
+    {
+        _observable = observable;
+        _configuration = configuration;
+        _value = startValue;
+    }
+
+    /// <summary>
+    /// For derived types that can only build their upstream after base construction: they must
+    /// assign <see cref="Observable"/> before anything subscribes.
+    /// </summary>
+    protected FromObservableSignalRefCounted(T startValue, ReadonlySignalConfiguration<T?> configuration)
+    {
+        _observable = null!;
+        _configuration = configuration;
+        _value = startValue;
     }
 
     /// <summary>
@@ -62,23 +90,42 @@ internal class FromObservableSignalRefCounted<T> : ISignal<T>, IEquatable<FromOb
 
     void OnSubscribe()
     {
+        bool becameObserved;
         lock (_lock)
         {
-            if (++_subscriberCount == 1)
+            becameObserved = ++_subscriberCount == 1;
+            if (becameObserved)
                 _upstreamSubscription = CreateUpstreamSubscription();
         }
+
+        if (becameObserved)
+            OnObservedChanged(true);
     }
 
     void OnUnsubscribe()
     {
+        bool becameUnobserved;
         lock (_lock)
         {
-            if (--_subscriberCount == 0)
+            becameUnobserved = --_subscriberCount == 0;
+            if (becameUnobserved)
             {
                 _upstreamSubscription?.Dispose();
                 _upstreamSubscription = null;
             }
         }
+
+        if (becameUnobserved)
+            OnObservedChanged(false);
+    }
+
+    /// <summary>
+    /// Called outside the ref-count lock whenever the subscriber count crosses zero, i.e. when this
+    /// signal starts or stops being observed by anything at all - Values, FutureValues, their
+    /// non-generic counterparts, PropertyChanged, or a Computed that collected it as a dependency.
+    /// </summary>
+    protected virtual void OnObservedChanged(bool isObserved)
+    {
     }
 
     public Observable<T> Values =>

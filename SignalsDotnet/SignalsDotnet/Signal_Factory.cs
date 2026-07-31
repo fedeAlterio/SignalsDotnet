@@ -33,6 +33,13 @@ public partial class Signal
     {
         return observable.ToSignal(configuration);
     }
+
+    public static IReadOnlySignal<T> FromObservable<T>(Observable<T> observable,
+                                                       T startValue,
+                                                       ReadonlySignalConfigurationDelegate<T?>? configuration = null)
+    {
+        return observable.ToSignal(startValue, configuration);
+    }
 }
 
 public static class SignalFactoryExtensions
@@ -41,6 +48,13 @@ public static class SignalFactoryExtensions
                                                   ReadonlySignalConfigurationDelegate<T?>? configurator = null)
     {
         return CreateSignal(@this, ResolveConfig(configurator));
+    }
+
+    public static IReadOnlySignal<T> ToSignal<T>(this Observable<T> @this,
+                                                  T startValue,
+                                                  ReadonlySignalConfigurationDelegate<T?>? configurator = null)
+    {
+        return CreateSignal(@this, startValue, ResolveConfig(configurator));
     }
 
     public static ISignal<T> ToLinkedSignal<T>(this Observable<T> @this,
@@ -68,6 +82,13 @@ public static class SignalFactoryExtensions
         return config.SubscriptionStrategy == SubscriptionStrategy.RefCount
             ? new FromObservableSignalRefCounted<T>(observable, config)
             : new FromObservableSignal<T>(observable, config);
+    }
+
+    internal static ISignal<T> CreateSignal<T>(Observable<T> observable, T startValue, ReadonlySignalConfiguration<T?> config)
+    {
+        return config.SubscriptionStrategy == SubscriptionStrategy.RefCount
+            ? new FromObservableSignalRefCounted<T>(observable, startValue, config)
+            : new FromObservableSignal<T>(observable, startValue, config);
     }
 
     internal static IAsyncSignal<T> CreateAsyncSignal<T>(Observable<T> observable, IReadOnlySignal<bool> isExecuting, ReadonlySignalConfiguration<T?> config)

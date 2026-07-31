@@ -1,10 +1,10 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
 		<PropertyGroup>
 				<TargetFrameworks>net8.0;netstandard2.1</TargetFrameworks>
 				<ImplicitUsings>enable</ImplicitUsings>
 				<Nullable>enable</Nullable>
-				<Description>Signals store for SignalsDotnet</Description>
+				<Description>SignalR client for SignalsDotnet's SignalR backed signals store</Description>
 				<RepositoryUrl>https://github.com/fedeAlterio/SignalsDotnet</RepositoryUrl>
 				<Version>2.3.1</Version>
 				<langversion>latest</langversion>
@@ -12,7 +12,8 @@
 		</PropertyGroup>
 
 		<ItemGroup>
-				<ProjectReference Include="..\SignalsDotnet\SignalsDotnet.csproj" />
+				<ProjectReference Include="..\SignalsDotnet.SignalsStore.SignalR.Contracts\SignalsDotnet.SignalsStore.SignalR.Contracts.csproj" />
+				<ProjectReference Include="..\SignalsDotnet.SignalsStore\SignalsDotnet.SignalsStore.csproj" />
 
 				<PackageReference Include="PolySharp" Version="1.14.1">
 						<PrivateAssets>all</PrivateAssets>
@@ -21,7 +22,11 @@
 
 				<PackageReference Include="R3Async" Version="1.0.1" />
 
-				<PackageReference Include="R3Async.R3Interop" Version="1.0.1" />
+				<PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="8.0.11" />
+		</ItemGroup>
+
+		<ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
+				<PackageReference Include="System.Text.Json" Version="8.0.5" />
 		</ItemGroup>
 
 </Project>

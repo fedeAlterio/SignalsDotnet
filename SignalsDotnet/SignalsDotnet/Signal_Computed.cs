@@ -34,6 +34,12 @@ public partial class Signal
         return ComputedObservable(func.ToAsyncValueTask(), fallbackValue);
     }
 
+    public static Observable<T> ComputedObservable<T>(Func<T> func)
+    {
+        return ComputedObservable(func.ToAsyncValueTask(), static () => default);
+    }
+
+
     internal static ISignal<T> Computed<T>(Func<CancellationToken, ValueTask<T>> func,
                                                    Optional<T> startValueOptional,
                                                    Func<Optional<T>> fallbackValue,

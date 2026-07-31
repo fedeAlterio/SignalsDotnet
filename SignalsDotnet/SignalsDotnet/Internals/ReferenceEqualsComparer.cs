@@ -8,7 +8,7 @@ internal sealed class ReferenceEqualityComparer<T> : IEqualityComparer<T>
 
     private ReferenceEqualityComparer() { }
 
-    public bool Equals(T x, T y)
+    public bool Equals(T? x, T? y)
     {
         return object.ReferenceEquals(x, y);
     }

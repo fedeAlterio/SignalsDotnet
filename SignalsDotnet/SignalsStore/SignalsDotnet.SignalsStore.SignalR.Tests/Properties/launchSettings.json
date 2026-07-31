@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "SignalsDotnet.SignalsStore.SignalR.Tests": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:61349;http://localhost:61350"
+    }
+  }
+}

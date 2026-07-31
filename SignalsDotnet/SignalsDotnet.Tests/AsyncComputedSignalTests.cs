@@ -125,7 +125,7 @@ public class AsyncComputedSignalTests
         await sum.Values.Where(x => x == 0)
                  .Take(1)
                  .WaitAsync()
-                 .ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
+                 .ConfigureAwait(ConfigureAwaitOptions.ForceYielding | ConfigureAwaitOptions.ContinueOnCapturedContext);
 
         sum.Values.Skip(1).Subscribe(_ => notifiedCount++);
         await middleComputationTcs.Task;
@@ -224,6 +224,6 @@ public class AsyncComputedSignalTests
         await asyncComputed.Values
                            .Timeout(TimeSpan.FromSeconds(1))
                            .FirstAsync(x => x == 5)
-                           .ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
+                           .ConfigureAwait(ConfigureAwaitOptions.ForceYielding | ConfigureAwaitOptions.ContinueOnCapturedContext);
     }
 }

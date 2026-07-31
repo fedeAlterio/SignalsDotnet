@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+		<PropertyGroup>
+				<TargetFrameworks>net8.0;netstandard2.1</TargetFrameworks>
+				<ImplicitUsings>enable</ImplicitUsings>
+				<Nullable>enable</Nullable>
+				<Description>Wire contracts shared between SignalsDotnet's SignalR store server and client</Description>
+				<RepositoryUrl>https://github.com/fedeAlterio/SignalsDotnet</RepositoryUrl>
+				<Version>2.3.1</Version>
+				<langversion>latest</langversion>
+				<PackageProjectUrl>https://github.com/fedeAlterio/SignalsDotnet</PackageProjectUrl>
+		</PropertyGroup>
+
+		<ItemGroup>
+				<PackageReference Include="PolySharp" Version="1.14.1">
+						<PrivateAssets>all</PrivateAssets>
+						<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+				</PackageReference>
+		</ItemGroup>
+
+</Project>

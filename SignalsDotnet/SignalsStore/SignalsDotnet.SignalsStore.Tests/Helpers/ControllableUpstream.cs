@@ -1,4 +1,5 @@
 using R3Async;
+using R3Async.Subjects;
 
 namespace SignalsDotnet.SignalsStore.Tests.Helpers;
 
@@ -7,7 +8,7 @@ namespace SignalsDotnet.SignalsStore.Tests.Helpers;
 /// are held open until the test releases them, so lifecycle ordering can be asserted precisely
 /// instead of inferred from timing.
 /// </summary>
-sealed class ControllableUpstream<T> : AsyncObservable<T>
+sealed class ControllableUpstream<T> : AsyncObservable<T>, ISubject<T>
 {
     readonly TaskCompletionSource _connectGate = new();
     readonly TaskCompletionSource _disconnectGate = new();
@@ -25,6 +26,23 @@ sealed class ControllableUpstream<T> : AsyncObservable<T>
     {
         var observer = _observer ?? throw new InvalidOperationException("Not connected.");
         await observer.OnNextAsync(value, cancellationToken);
+    }
+
+    public AsyncObservable<T> Values => this;
+
+    public ValueTask OnNextAsync(T value, CancellationToken cancellationToken) =>
+        EmitAsync(value, cancellationToken);
+
+    public ValueTask OnErrorResumeAsync(Exception error, CancellationToken cancellationToken)
+    {
+        var observer = _observer ?? throw new InvalidOperationException("Not connected.");
+        return observer.OnErrorResumeAsync(error, cancellationToken);
+    }
+
+    public ValueTask OnCompletedAsync(Result result)
+    {
+        var observer = _observer ?? throw new InvalidOperationException("Not connected.");
+        return observer.OnCompletedAsync(result);
     }
 
     public async ValueTask CompleteAsync(Exception? error = null)

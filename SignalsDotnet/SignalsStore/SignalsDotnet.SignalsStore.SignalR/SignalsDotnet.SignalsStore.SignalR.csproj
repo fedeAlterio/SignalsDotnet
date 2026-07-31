@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+		<PropertyGroup>
+				<TargetFramework>net8.0</TargetFramework>
+				<ImplicitUsings>enable</ImplicitUsings>
+				<Nullable>enable</Nullable>
+				<Description>SignalR backed signals store for SignalsDotnet</Description>
+				<RepositoryUrl>https://github.com/fedeAlterio/SignalsDotnet</RepositoryUrl>
+				<Version>2.3.1</Version>
+				<langversion>latest</langversion>
+				<PackageProjectUrl>https://github.com/fedeAlterio/SignalsDotnet</PackageProjectUrl>
+		</PropertyGroup>
+
+		<ItemGroup>
+				<FrameworkReference Include="Microsoft.AspNetCore.App" />
+
+				<ProjectReference Include="..\SignalsDotnet.SignalsStore\SignalsDotnet.SignalsStore.csproj" />
+				<ProjectReference Include="..\SignalsDotnet.SignalsStore.SignalR.Contracts\SignalsDotnet.SignalsStore.SignalR.Contracts.csproj" />
+
+				<PackageReference Include="PolySharp" Version="1.14.1">
+						<PrivateAssets>all</PrivateAssets>
+						<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+				</PackageReference>
+
+				<PackageReference Include="R3Async" Version="1.0.1" />
+
+				<PackageReference Include="R3Async.R3Interop" Version="1.0.1" />
+		</ItemGroup>
+
+</Project>
