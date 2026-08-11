@@ -177,6 +177,9 @@ internal class FromObservableSignalRefCounted<T> : ISignal<T>, IEquatable<FromOb
     Observable<Unit> INotifySignalChanged.FutureValues =>
         new RefCountObservable<Unit>(new RawPropertyChangedObservableUnit(this, true), OnSubscribe, OnUnsubscribe, activateUpstreamFirst: false);
 
+    Observable<Unit> INotifySignalChanged.FutureValuesUntracked =>
+        new RawPropertyChangedObservableUnit(this, true);
+
 
     sealed class RefCountObservable<TItem>(Observable<TItem> inner, Action onSubscribe, Action onUnsubscribe, bool activateUpstreamFirst) : Observable<TItem>
     {

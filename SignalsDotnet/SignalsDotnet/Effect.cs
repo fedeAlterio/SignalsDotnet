@@ -31,6 +31,16 @@ public class Effect : IDisposable
                               .Subscribe();
     }
 
+    public static Effect Create(Action onChange, TimeProvider? scheduler = null)
+    {
+        return new Effect(onChange, scheduler);
+    }
+
+    public static Effect Create(Func<CancellationToken, ValueTask> onChange, ConcurrentChangeStrategy concurrentChangeStrategy = default, TimeProvider? scheduler = null)
+    {
+        return new Effect(onChange, concurrentChangeStrategy, scheduler);
+    }
+
     static Func<Unit, Observable<Unit>> ComputationDelayer(TimeProvider? scheduler)
     {
         var atomicOperations = Observable.Defer(() =>
