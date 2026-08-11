@@ -99,8 +99,6 @@ public partial class Signal
         return source;
     }
 
-
-
     internal static ISignal<T> Computed<T>(Func<CancellationToken, ValueTask<T>> func,
                                                    Optional<T> startValueOptional,
                                                    Func<Optional<T>> fallbackValue,

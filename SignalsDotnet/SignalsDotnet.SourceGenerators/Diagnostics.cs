@@ -84,6 +84,14 @@ static class Diagnostics
         DiagnosticSeverity.Error,
         true);
 
+    public static readonly DiagnosticDescriptor PositionalRecordNotSupported = new(
+        "SIG011",
+        "Positional records are not supported",
+        "Record '{0}' declares a primary constructor. Its positional parameters generate properties and a constructor that conflict with the generated ones. Declare the record without a primary constructor and use partial properties instead.",
+        "SignalsDotnet",
+        DiagnosticSeverity.Error,
+        true);
+
     public static readonly DiagnosticDescriptor RefLikePropertyNotSupported = new(
         "SIG005",
         "Ref like types are not supported",

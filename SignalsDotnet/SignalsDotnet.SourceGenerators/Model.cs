@@ -42,6 +42,11 @@ sealed record SignalClassModel(
     EquatableArray<AsyncComputedPropertyModel> AsyncComputedProperties,
     bool NotifyPropertyChangedRequested,
     bool AlreadyImplementsINotifyPropertyChanged,
+    bool EmitModelChanged,
+    bool SystemTextJsonAvailable,
+    bool IsRecord,
+    bool IsRecordStruct,
+    bool IsSealed,
     string ClassName,
     string HintName);
 

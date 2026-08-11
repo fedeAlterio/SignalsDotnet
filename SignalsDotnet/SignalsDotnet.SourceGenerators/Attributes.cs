@@ -18,7 +18,7 @@ static class Attributes
             /// <summary>
             /// Marks a partial class whose partial auto properties should be backed by <see cref="Signal{T}"/> instances.
             /// </summary>
-            [global::System.AttributeUsage(global::System.AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+            [global::System.AttributeUsage(global::System.AttributeTargets.Class | global::System.AttributeTargets.Struct, AllowMultiple = false, Inherited = false)]
             [global::System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
             internal sealed class GenerateSignalsAttribute : global::System.Attribute
             {
@@ -28,7 +28,7 @@ static class Attributes
             /// Makes the generated class implement <see cref="global::System.ComponentModel.INotifyPropertyChanged"/>
             /// and raise it whenever any generated property changes.
             /// </summary>
-            [global::System.AttributeUsage(global::System.AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+            [global::System.AttributeUsage(global::System.AttributeTargets.Class | global::System.AttributeTargets.Struct, AllowMultiple = false, Inherited = false)]
             [global::System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
             internal sealed class GenerateNotifyPropertyChangedAttribute : global::System.Attribute
             {

@@ -1,14 +1,13 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using R3;
 
 namespace SignalsDotnet.Internals.Helpers;
 
-internal sealed class SyncCompletionSource : IAwaitable, IAwaiter
+internal sealed class SyncCompletionSource : INotifyCompletion
 {
     Action? _continuation;
     public SyncCompletionSource GetAwaiter() => this;
-    IAwaiter IAwaitable.GetAwaiter() => this;
     public bool IsCompleted => ReferenceEquals(Volatile.Read(ref _continuation), ActionStub.Nop);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -22,13 +21,7 @@ internal sealed class SyncCompletionSource : IAwaitable, IAwaiter
             throw new InvalidOperationException("Double await");
     }
 
-    public void GetResult()
-    {
-        if (Error is { } error)
-            ExceptionDispatchInfo.Capture(error).Throw();
-    }
-
-    internal Exception? Error { get; set; }
+    public void GetResult() { }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void SetCompleted(Unit unit) => Interlocked.Exchange(ref _continuation, ActionStub.Nop)?.Invoke();

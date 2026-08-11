@@ -15,7 +15,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 6.0.x
+        dotnet-version: 8.0.x
 
     - name: Restore dependencies
       run: dotnet restore ./SignalsDotnet
@@ -24,7 +24,7 @@ jobs:
       run: dotnet build -c Release ./SignalsDotnet --no-restore
 
     - name: Test
-      run: dotnet test -c Release ./SignalsDotnet/SignalsDotnet.Tests --no-build --verbosity normal
+      run: dotnet test -c Release ./SignalsDotnet --no-build --verbosity normal
 
     - name: Pack SignalsDotnet
       run: dotnet pack SignalsDotnet/SignalsDotnet -c Release --no-build --output .

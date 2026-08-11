@@ -1,4 +1,8 @@
 ﻿using System.ComponentModel;
+using System.Reflection;
+using System.Runtime.Serialization;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using FluentAssertions;
 using R3;
 using SignalsDotnet.SourceGenerators.Tests.Helpers;
@@ -413,6 +417,278 @@ public class GeneratedSignalsTests
 
         typeof(WithAccessors).GetProperty("PrivateSetter")!.SetMethod!.IsPrivate.Should().BeTrue();
         model.PrivateSetterSignal.Should().NotBeNull();
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task ModelChanged_is_raised_when_any_signal_property_changes()
+    {
+        await this.SwitchToMainThread();
+        var person = new Person();
+        var raised = 0;
+
+        using var subscription = person.ModelChanged.Values.Subscribe(_ => raised++);
+        var initial = raised;
+
+        person.Name = "Ada";
+        raised.Should().Be(initial + 1);
+
+        person.Age = 36;
+        raised.Should().Be(initial + 2);
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task ModelChanged_follows_the_deduplication_of_the_source_signal()
+    {
+        await this.SwitchToMainThread();
+        var person = new Person { Name = "Ada" };
+        var raised = 0;
+
+        using var subscription = person.ModelChanged.Values.Subscribe(_ => raised++);
+        var initial = raised;
+
+        person.Name = "Ada";
+        raised.Should().Be(initial);
+
+        person.Name = "Grace";
+        raised.Should().Be(initial + 1);
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task ModelChanged_does_not_react_to_computed_properties()
+    {
+        await this.SwitchToMainThread();
+        var model = new ChainedComputed();
+        var raised = 0;
+
+        using var keepComputedAlive = model.DoubledSignal.Values.Subscribe(_ => { });
+        using var subscription = model.ModelChanged.Values.Subscribe(_ => raised++);
+        var initial = raised;
+
+        model.Value = 5;
+
+        raised.Should().Be(initial + 1);
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task ModelChanged_participates_in_computed_signals()
+    {
+        await this.SwitchToMainThread();
+        var person = new Person();
+        var revisions = 0;
+
+        var revision = Signal.Computed(() =>
+        {
+            _ = person.ModelChanged.Value;
+            return ++revisions;
+        });
+
+        using var subscription = revision.Values.Subscribe(_ => { });
+
+        var afterFirstChange = 0;
+
+        person.Name = "Ada";
+        afterFirstChange = revision.Value;
+        afterFirstChange.Should().BeGreaterThan(0);
+
+        person.Age = 36;
+        revision.Value.Should().BeGreaterThan(afterFirstChange);
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task ModelChanged_is_a_signal_of_the_model()
+    {
+        await this.SwitchToMainThread();
+        var person = new Person();
+
+        person.ModelChanged.Should().BeAssignableTo<IReadOnlySignal<Person>>();
+        typeof(Person).GetProperty(nameof(Person.ModelChanged))!.CanWrite.Should().BeFalse();
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task ModelChanged_yields_the_model_instance()
+    {
+        await this.SwitchToMainThread();
+        var person = new Person();
+        var seen = new List<Person>();
+
+        using var subscription = person.ModelChanged.Values.Subscribe(x => seen.Add(x));
+
+        person.Name = "Ada";
+
+        seen.Should().NotBeEmpty();
+        seen.Should().AllSatisfy(x => x.Should().BeSameAs(person));
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task ModelChanged_is_not_generated_without_signal_properties()
+    {
+        await this.SwitchToMainThread();
+
+        typeof(OnlyComputed).GetProperty("ModelChanged").Should().BeNull();
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Model_round_trips_through_System_Text_Json()
+    {
+        await this.SwitchToMainThread();
+        var person = new Person { Name = "Ada", Age = 36 };
+
+        var json = JsonSerializer.Serialize(person);
+        var restored = JsonSerializer.Deserialize<Person>(json)!;
+
+        restored.Name.Should().Be("Ada");
+        restored.Age.Should().Be(36);
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Serialized_json_only_contains_the_data_properties()
+    {
+        await this.SwitchToMainThread();
+        var person = new Person { Name = "Ada", Age = 36 };
+
+        var json = JsonSerializer.Serialize(person);
+        using var document = JsonDocument.Parse(json);
+
+        var names = document.RootElement.EnumerateObject().Select(x => x.Name).ToArray();
+
+        names.Should().BeEquivalentTo(nameof(Person.Name), nameof(Person.Age));
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Computed_and_signal_members_are_ignored_on_serialization()
+    {
+        await this.SwitchToMainThread();
+
+        AssertIgnored<Person>(nameof(Person.NameSignal));
+        AssertIgnored<Person>(nameof(Person.AgeSignal));
+        AssertIgnored<Person>(nameof(Person.FullName));
+        AssertIgnored<Person>(nameof(Person.FullNameSignal));
+        AssertIgnored<Person>(nameof(Person.ModelChanged));
+
+        AssertIgnored<AsyncPerson>(nameof(AsyncPerson.Greeting));
+        AssertIgnored<AsyncPerson>(nameof(AsyncPerson.GreetingSignal));
+        AssertIgnored<AsyncPerson>(nameof(AsyncPerson.IsGreetingComputing));
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Async_model_round_trips_through_System_Text_Json()
+    {
+        await this.SwitchToMainThread();
+        var person = new AsyncPerson { Name = "Ada" };
+
+        var json = JsonSerializer.Serialize(person);
+        var restored = JsonSerializer.Deserialize<AsyncPerson>(json)!;
+
+        restored.Name.Should().Be("Ada");
+    }
+
+    static void AssertIgnored<T>(string propertyName)
+    {
+        var property = typeof(T).GetProperty(propertyName);
+        property.Should().NotBeNull($"{propertyName} should exist on {typeof(T).Name}");
+
+        property!.GetCustomAttribute<JsonIgnoreAttribute>()
+                 .Should().NotBeNull($"{propertyName} should carry [JsonIgnore]");
+
+        property!.GetCustomAttribute<IgnoreDataMemberAttribute>()
+                 .Should().NotBeNull($"{propertyName} should carry [IgnoreDataMember]");
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Record_properties_round_trip()
+    {
+        await this.SwitchToMainThread();
+        var person = new PersonRecord { Name = "Ada", Age = 36 };
+
+        person.Name.Should().Be("Ada");
+        person.Age.Should().Be(36);
+        person.NameSignal.Value.Should().Be("Ada");
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Record_supports_computed_properties_and_notification()
+    {
+        await this.SwitchToMainThread();
+        var person = new PersonRecord { Name = "Ada", Age = 36 };
+        var raised = new List<string?>();
+
+        using var keepAlive = person.FullNameSignal.Values.Subscribe(_ => { });
+        ((INotifyPropertyChanged)person).PropertyChanged += (_, args) => raised.Add(args.PropertyName);
+
+        person.FullName.Should().Be("Ada 36");
+
+        person.Age = 37;
+
+        person.FullName.Should().Be("Ada 37");
+        raised.Should().Contain(nameof(PersonRecord.Age));
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Record_struct_is_supported_without_ModelChanged()
+    {
+        await this.SwitchToMainThread();
+        var point = new PointRecordStruct { X = 3 };
+
+        point.X.Should().Be(3);
+        typeof(PointRecordStruct).GetProperty("ModelChanged").Should().BeNull();
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Nested_records_are_supported()
+    {
+        await this.SwitchToMainThread();
+        var nested = new Container.NestedRecord { Name = "Ada" };
+
+        nested.NameSignal.Value.Should().Be("Ada");
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Record_value_equality_uses_only_the_data_properties()
+    {
+        await this.SwitchToMainThread();
+        var a = new PersonRecord { Name = "Ada", Age = 36 };
+        var b = new PersonRecord { Name = "Ada", Age = 36 };
+
+        (a == b).Should().BeTrue();
+        a.GetHashCode().Should().Be(b.GetHashCode());
+
+        b.Age = 37;
+        (a == b).Should().BeFalse();
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Record_ToString_hides_the_generated_signals()
+    {
+        await this.SwitchToMainThread();
+        var person = new PersonRecord { Name = "Ada", Age = 36 };
+
+        person.ToString().Should().Be("PersonRecord { Name = Ada, Age = 36 }");
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Record_with_expression_copies_the_data_properties()
+    {
+        await this.SwitchToMainThread();
+        var person = new PersonRecord { Name = "Ada", Age = 36 };
+
+        var older = person with { Age = 40 };
+
+        older.Name.Should().Be("Ada");
+        older.Age.Should().Be(40);
+        person.Age.Should().Be(36);
+        older.ToString().Should().Be("PersonRecord { Name = Ada, Age = 40 }");
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Record_struct_equality_and_ToString_use_the_data_properties()
+    {
+        await this.SwitchToMainThread();
+        var a = new PointRecordStruct { X = 3 };
+        var b = new PointRecordStruct { X = 3 };
+
+        (a == b).Should().BeTrue();
+        a.GetHashCode().Should().Be(b.GetHashCode());
+        a.ToString().Should().Be("PointRecordStruct { X = 3 }");
     }
 
     [Fact(Timeout = TestTimeoutMs)]

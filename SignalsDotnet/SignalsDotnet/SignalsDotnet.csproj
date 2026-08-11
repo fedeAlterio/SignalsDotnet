@@ -30,6 +30,19 @@
 		</ItemGroup>
 
 		<ItemGroup>
+				<ProjectReference Include="..\SignalsDotnet.SourceGenerators\SignalsDotnet.SourceGenerators.csproj"
+													OutputItemType="Analyzer"
+													ReferenceOutputAssembly="false" />
+		</ItemGroup>
+
+		<ItemGroup>
+				<None Include="..\SignalsDotnet.SourceGenerators\bin\$(Configuration)\netstandard2.0\SignalsDotnet.SourceGenerators.dll"
+							Pack="true"
+							PackagePath="analyzers/dotnet/cs"
+							Visible="false" />
+		</ItemGroup>
+
+		<ItemGroup>
 				<PackageReference Include="R3" Version="1.2.9" />
 
 				<PackageReference Include="PolySharp" Version="1.14.1">

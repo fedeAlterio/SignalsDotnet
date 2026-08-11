@@ -9,6 +9,17 @@ static class Emitter
     const string NotifySignalChangedType = "global::SignalsDotnet.INotifySignalChanged";
     const string AsyncReadOnlySignalType = "global::SignalsDotnet.IAsyncReadOnlySignal";
 
+    public const string ModelChangedPropertyName = "ModelChanged";
+    const string ModelChangedFieldName = "_modelChangedSignal";
+
+    static void EmitIgnoreOnSerialization(IndentedBuilder builder, bool systemTextJsonAvailable)
+    {
+        builder.AppendLine("[global::System.Runtime.Serialization.IgnoreDataMember]");
+
+        if (systemTextJsonAvailable)
+            builder.AppendLine("[global::System.Text.Json.Serialization.JsonIgnore]");
+    }
+
     public static string Emit(SignalClassModel model)
     {
         var builder = new IndentedBuilder();
@@ -61,7 +72,7 @@ static class Emitter
             if (i > 0)
                 builder.AppendLine();
 
-            EmitProperty(builder, properties[i]);
+            EmitProperty(builder, properties[i], model.SystemTextJsonAvailable);
         }
 
         var computedProperties = model.ComputedProperties.Items;
@@ -70,7 +81,7 @@ static class Emitter
             if (i > 0 || properties.Length > 0)
                 builder.AppendLine();
 
-            EmitComputedProperty(builder, computedProperties[i]);
+            EmitComputedProperty(builder, computedProperties[i], model.SystemTextJsonAvailable);
         }
 
         var asyncComputedProperties = model.AsyncComputedProperties.Items;
@@ -79,7 +90,15 @@ static class Emitter
             if (i > 0 || properties.Length > 0 || computedProperties.Length > 0)
                 builder.AppendLine();
 
-            EmitAsyncComputedProperty(builder, asyncComputedProperties[i]);
+            EmitAsyncComputedProperty(builder, asyncComputedProperties[i], model.SystemTextJsonAvailable);
+        }
+
+        if (model.EmitModelChanged)
+        {
+            if (properties.Length > 0 || computedProperties.Length > 0 || asyncComputedProperties.Length > 0)
+                builder.AppendLine();
+
+            EmitModelChanged(builder, properties, model.Hierarchy.Items[model.Hierarchy.Items.Length - 1].Name, model.SystemTextJsonAvailable);
         }
 
         var notified = notify
@@ -93,6 +112,35 @@ static class Emitter
         builder.AppendLine();
         builder.AppendLine($"public {model.ClassName}()");
         builder.OpenBrace();
+        builder.AppendLine("InitializeSignals();");
+        builder.AppendLine("OnInitialized();");
+        builder.CloseBrace();
+
+        builder.AppendLine();
+
+        var initializedFields = properties.Select(static x => x.FieldName)
+                                          .Concat(computedProperties.Select(static x => x.FieldName))
+                                          .Concat(asyncComputedProperties.Select(static x => x.FieldName))
+                                          .Concat(model.EmitModelChanged ? [ModelChangedFieldName] : Array.Empty<string>())
+                                          .ToArray();
+
+        if (initializedFields.Length > 0)
+        {
+            var names = string.Join(", ", initializedFields.Select(static x => $"nameof({x})"));
+            builder.AppendLine($"[global::System.Diagnostics.CodeAnalysis.MemberNotNull({names})]");
+        }
+
+        builder.AppendLine("private void InitializeSignals()");
+        builder.OpenBrace();
+
+        foreach (var property in properties)
+        {
+            var signalOfT = $"{SignalType}<{property.TypeName}>";
+            builder.AppendLine($"{property.FieldName} = new {signalOfT}();");
+        }
+
+        if (properties.Length > 0 && (computedProperties.Length > 0 || asyncComputedProperties.Length > 0 || model.EmitModelChanged))
+            builder.AppendLine();
 
         foreach (var computed in computedProperties)
         {
@@ -108,7 +156,26 @@ static class Emitter
             builder.AppendLine($"{computed.FieldName} = {SignalType}.AsyncComputed<{computed.TypeName}>({func}, default!, {computed.ConcurrentChangeStrategy});");
         }
 
-        if (notified.Length > 0 && (computedProperties.Length > 0 || asyncComputedProperties.Length > 0))
+        if (model.EmitModelChanged)
+        {
+            if (computedProperties.Length > 0 || asyncComputedProperties.Length > 0)
+                builder.AppendLine();
+
+            var modelTypeName = model.Hierarchy.Items[model.Hierarchy.Items.Length - 1].Name;
+
+            builder.AppendLine($"{ModelChangedFieldName} = {SignalType}.Computed<{modelTypeName}>(() =>");
+            builder.OpenBrace();
+
+            foreach (var property in properties)
+            {
+                builder.AppendLine($"_ = {property.FieldName}.Value;");
+            }
+
+            builder.AppendLine("return this;");
+            builder.CloseBrace(", config => config with { RaiseOnlyWhenChanged = false });");
+        }
+
+        if (notified.Length > 0 && (computedProperties.Length > 0 || asyncComputedProperties.Length > 0 || model.EmitModelChanged))
             builder.AppendLine();
 
         foreach (var (name, field) in notified)
@@ -116,13 +183,14 @@ static class Emitter
             builder.AppendLine($"global::R3.ObservableSubscribeExtensions.Subscribe((({NotifySignalChangedType}){field}).FutureValuesUntracked, _ => OnPropertyChanged(nameof({name})));");
         }
 
-        builder.AppendLine();
-        builder.AppendLine("OnInitialized();");
         builder.CloseBrace();
         builder.AppendLine();
 
         builder.AppendLine("/// <summary>Called once the generated signals are initialized. Implement it to run your own construction logic.</summary>");
         builder.AppendLine("partial void OnInitialized();");
+
+        if (model.IsRecord)
+            EmitRecordMembers(builder, model, properties);
 
         if (declareInpc)
         {
@@ -137,14 +205,148 @@ static class Emitter
         }
     }
 
-    static void EmitProperty(IndentedBuilder builder, SignalPropertyModel property)
+    static void EmitRecordMembers(IndentedBuilder builder, SignalClassModel model, SignalPropertyModel[] dataProperties)
+    {
+        var typeName = model.Hierarchy.Items[model.Hierarchy.Items.Length - 1].Name;
+
+        if (!model.IsRecordStruct)
+        {
+            builder.AppendLine();
+            builder.AppendLine("/// <summary>Copy constructor giving the clone its own signals, so 'with' does not alias the original.</summary>");
+            builder.AppendLine($"{(model.IsSealed ? "private" : "protected")} {model.ClassName}({typeName} original)");
+            builder.OpenBrace();
+            builder.AppendLine("if (original is null) throw new global::System.ArgumentNullException(nameof(original));");
+            builder.AppendLine("InitializeSignals();");
+
+            foreach (var property in dataProperties)
+            {
+                builder.AppendLine($"{property.FieldName}.Value = original.{property.Name};");
+            }
+
+            builder.CloseBrace();
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("/// <summary>Prints only the signal backed data properties, hiding the generated signals.</summary>");
+
+        var printModifiers = model.IsRecordStruct || model.IsSealed ? "private" : "protected virtual";
+
+        builder.AppendLine($"{printModifiers} bool PrintMembers(global::System.Text.StringBuilder builder)");
+        builder.OpenBrace();
+
+        if (dataProperties.Length == 0)
+        {
+            builder.AppendLine("return false;");
+        }
+        else
+        {
+            for (var i = 0; i < dataProperties.Length; i++)
+            {
+                if (i > 0)
+                    builder.AppendLine("builder.Append(\", \");");
+
+                builder.AppendLine($"builder.Append(\"{dataProperties[i].Name} = \").Append((object?){dataProperties[i].Name});");
+            }
+
+            builder.AppendLine("return true;");
+        }
+
+        builder.CloseBrace();
+
+        builder.AppendLine();
+        builder.AppendLine("/// <summary>Compares only the signal backed data properties.</summary>");
+
+        var equalsModifier = model.IsRecordStruct ? "public" : "public virtual";
+        var nullableSuffix = model.IsRecordStruct ? "" : "?";
+
+        builder.AppendLine($"{equalsModifier} bool Equals({typeName}{nullableSuffix} other)");
+        builder.OpenBrace();
+
+        if (!model.IsRecordStruct)
+        {
+            builder.AppendLine("if (other is null) return false;");
+            builder.AppendLine("if (global::System.Object.ReferenceEquals(this, other)) return true;");
+            builder.AppendLine("if (EqualityContract != other.EqualityContract) return false;");
+        }
+
+        if (dataProperties.Length == 0)
+        {
+            builder.AppendLine("return true;");
+        }
+        else
+        {
+            for (var i = 0; i < dataProperties.Length; i++)
+            {
+                var property = dataProperties[i];
+                var prefix = i == 0 ? "return " : "       && ";
+                var suffix = i == dataProperties.Length - 1 ? ";" : "";
+
+                builder.AppendLine($"{prefix}global::System.Collections.Generic.EqualityComparer<{property.TypeName}>.Default.Equals({property.Name}, other.{property.Name}){suffix}");
+            }
+        }
+
+        builder.CloseBrace();
+
+        builder.AppendLine();
+        builder.AppendLine("/// <inheritdoc />");
+        builder.AppendLine("public override int GetHashCode()");
+        builder.OpenBrace();
+
+        if (dataProperties.Length == 0)
+        {
+            builder.AppendLine("return 0;");
+        }
+        else
+        {
+            builder.AppendLine("var hash = new global::System.HashCode();");
+
+            if (!model.IsRecordStruct)
+                builder.AppendLine("hash.Add(EqualityContract);");
+
+            foreach (var property in dataProperties)
+            {
+                builder.AppendLine($"hash.Add({property.Name});");
+            }
+
+            builder.AppendLine("return hash.ToHashCode();");
+        }
+
+        builder.CloseBrace();
+    }
+
+    static void EmitModelChanged(IndentedBuilder builder, SignalPropertyModel[] properties, string typeName, bool systemTextJsonAvailable)
+    {
+        var signalOfModel = $"{ReadOnlySignalType}<{typeName}>";
+
+        builder.AppendLine($"private {signalOfModel} {ModelChangedFieldName} = null!;");
+        builder.AppendLine();
+
+        builder.AppendLine("/// <summary>");
+        builder.AppendLine($"/// Signal holding this instance, raised whenever any of {DescribeProperties(properties)} changes.");
+        builder.AppendLine("/// </summary>");
+        EmitIgnoreOnSerialization(builder, systemTextJsonAvailable);
+        builder.AppendLine($"public {signalOfModel} {ModelChangedPropertyName} => {ModelChangedFieldName};");
+    }
+
+    static string DescribeProperties(SignalPropertyModel[] properties)
+    {
+        var names = properties.Select(static x => $"<see cref=\"{x.Name}\"/>").ToArray();
+        if (names.Length == 1)
+            return names[0];
+
+        var head = string.Join(", ", names.Take(names.Length - 1));
+        return $"{head} or {names[names.Length - 1]}";
+    }
+
+    static void EmitProperty(IndentedBuilder builder, SignalPropertyModel property, bool systemTextJsonAvailable)
     {
         var signalOfT = $"{SignalType}<{property.TypeName}>";
 
-        builder.AppendLine($"private readonly {signalOfT} {property.FieldName} = new {signalOfT}();");
+        builder.AppendLine($"private {signalOfT} {property.FieldName} = null!;");
         builder.AppendLine();
 
         builder.AppendLine($"/// <summary>Signal backing <see cref=\"{property.Name}\"/>.</summary>");
+        EmitIgnoreOnSerialization(builder, systemTextJsonAvailable);
         builder.AppendLine($"{property.Accessibility} {ReadOnlySignalType}<{property.TypeName}> {property.SignalPropertyName} => {property.FieldName};");
         builder.AppendLine();
 
@@ -164,37 +366,42 @@ static class Emitter
         builder.CloseBrace();
     }
 
-    static void EmitAsyncComputedProperty(IndentedBuilder builder, AsyncComputedPropertyModel property)
+    static void EmitAsyncComputedProperty(IndentedBuilder builder, AsyncComputedPropertyModel property, bool systemTextJsonAvailable)
     {
         var asyncSignalOfT = $"{AsyncReadOnlySignalType}<{property.TypeName}>";
 
-        builder.AppendLine($"private readonly {asyncSignalOfT} {property.FieldName};");
+        builder.AppendLine($"private {asyncSignalOfT} {property.FieldName} = null!;");
         builder.AppendLine();
 
         builder.AppendLine($"/// <summary>Asynchronous computed signal backing <see cref=\"{property.Name}\"/>.</summary>");
+        EmitIgnoreOnSerialization(builder, systemTextJsonAvailable);
         builder.AppendLine($"{property.Accessibility} {asyncSignalOfT} {property.SignalPropertyName} => {property.FieldName};");
         builder.AppendLine();
 
         builder.AppendLine($"/// <summary>True while <see cref=\"{property.MethodName}\"/> is running.</summary>");
+        EmitIgnoreOnSerialization(builder, systemTextJsonAvailable);
         builder.AppendLine($"{property.Accessibility} bool {property.IsComputingPropertyName} => {property.FieldName}.IsComputing.Value;");
         builder.AppendLine();
 
         builder.AppendLine($"/// <summary>Computed from <see cref=\"{property.MethodName}\"/>.</summary>");
+        EmitIgnoreOnSerialization(builder, systemTextJsonAvailable);
         builder.AppendLine($"{property.Accessibility} {property.TypeName} {property.Name} => {property.FieldName}.Value;");
     }
 
-    static void EmitComputedProperty(IndentedBuilder builder, ComputedPropertyModel property)
+    static void EmitComputedProperty(IndentedBuilder builder, ComputedPropertyModel property, bool systemTextJsonAvailable)
     {
         var readOnlySignalOfT = $"{ReadOnlySignalType}<{property.TypeName}>";
 
-        builder.AppendLine($"private readonly {readOnlySignalOfT} {property.FieldName};");
+        builder.AppendLine($"private {readOnlySignalOfT} {property.FieldName} = null!;");
         builder.AppendLine();
 
         builder.AppendLine($"/// <summary>Computed signal backing <see cref=\"{property.Name}\"/>.</summary>");
+        EmitIgnoreOnSerialization(builder, systemTextJsonAvailable);
         builder.AppendLine($"{property.Accessibility} {readOnlySignalOfT} {property.SignalPropertyName} => {property.FieldName};");
         builder.AppendLine();
 
         builder.AppendLine($"/// <summary>Computed from <see cref=\"{property.MethodName}\"/>.</summary>");
+        EmitIgnoreOnSerialization(builder, systemTextJsonAvailable);
         builder.AppendLine($"{property.Accessibility} {property.TypeName} {property.Name} => {property.FieldName}.Value;");
     }
 }

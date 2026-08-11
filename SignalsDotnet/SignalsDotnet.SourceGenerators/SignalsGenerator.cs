@@ -15,9 +15,9 @@ public class SignalsGenerator : IIncrementalGenerator
 
         var wholeClassModels = context.SyntaxProvider
                                       .ForAttributeWithMetadataName(Attributes.GenerateSignalsAttributeName,
-                                                                    static (node, _) => node is ClassDeclarationSyntax,
+                                                                    static (node, _) => node is TypeDeclarationSyntax,
                                                                     static (ctx, ct) => Parse(ctx.TargetSymbol as INamedTypeSymbol,
-                                                                                              ctx.TargetNode as ClassDeclarationSyntax,
+                                                                                              ctx.TargetNode as TypeDeclarationSyntax,
                                                                                               ctx.SemanticModel.Compilation,
                                                                                               wholeClass: true,
                                                                                               ct))
@@ -56,7 +56,7 @@ public class SignalsGenerator : IIncrementalGenerator
                                      .Select(static (candidate, ct) => Parse(candidate.Type,
                                                                              candidate.Type.DeclaringSyntaxReferences
                                                                                       .Select(static x => x.GetSyntax())
-                                                                                      .OfType<ClassDeclarationSyntax>()
+                                                                                      .OfType<TypeDeclarationSyntax>()
                                                                                       .FirstOrDefault(),
                                                                              candidate.Compilation,
                                                                              wholeClass: false,
@@ -81,7 +81,7 @@ public class SignalsGenerator : IIncrementalGenerator
     }
 
     static ParseResult? Parse(INamedTypeSymbol? type,
-                              ClassDeclarationSyntax? classSyntax,
+                              TypeDeclarationSyntax? classSyntax,
                               Compilation compilation,
                               bool wholeClass,
                               CancellationToken cancellationToken)
@@ -94,6 +94,15 @@ public class SignalsGenerator : IIncrementalGenerator
         if (!classSyntax.Modifiers.Any(SyntaxKind.PartialKeyword))
         {
             diagnostics.Add(Diagnostic.Create(Diagnostics.ClassMustBePartial, classSyntax.Identifier.GetLocation(), type.Name));
+            return new ParseResult(null, diagnostics.ToImmutableArray());
+        }
+
+        if (type.DeclaringSyntaxReferences
+                .Select(static x => x.GetSyntax())
+                .OfType<RecordDeclarationSyntax>()
+                .Any(static x => x.ParameterList is not null))
+        {
+            diagnostics.Add(Diagnostic.Create(Diagnostics.PositionalRecordNotSupported, classSyntax.Identifier.GetLocation(), type.Name));
             return new ParseResult(null, diagnostics.ToImmutableArray());
         }
 
@@ -151,6 +160,13 @@ public class SignalsGenerator : IIncrementalGenerator
 
         var ns = type.ContainingNamespace.IsGlobalNamespace ? null : type.ContainingNamespace.ToDisplayString();
 
+        var emitModelChanged = properties.Count > 0
+                               && type.TypeKind != TypeKind.Struct
+                               && !type.GetMembers(Emitter.ModelChangedPropertyName).Any();
+
+        var systemTextJsonAvailable =
+            compilation.GetTypeByMetadataName("System.Text.Json.Serialization.JsonIgnoreAttribute") is not null;
+
         var result = new SignalClassModel(ns,
                                           new EquatableArray<TypeDeclarationModel>([.. hierarchy]),
                                           new EquatableArray<SignalPropertyModel>([.. properties]),
@@ -158,6 +174,11 @@ public class SignalsGenerator : IIncrementalGenerator
                                           new EquatableArray<AsyncComputedPropertyModel>([.. asyncComputedProperties]),
                                           notifyRequested,
                                           alreadyImplementsInpc,
+                                          emitModelChanged,
+                                          systemTextJsonAvailable,
+                                          type.IsRecord,
+                                          type.IsRecord && type.TypeKind == TypeKind.Struct,
+                                          type.IsSealed,
                                           type.Name,
                                           BuildHintName(type));
 
@@ -409,7 +430,7 @@ public class SignalsGenerator : IIncrementalGenerator
                                               isTask);
     }
 
-    static List<TypeDeclarationModel>? BuildHierarchy(INamedTypeSymbol type, ClassDeclarationSyntax syntax, List<Diagnostic> diagnostics)
+    static List<TypeDeclarationModel>? BuildHierarchy(INamedTypeSymbol type, TypeDeclarationSyntax syntax, List<Diagnostic> diagnostics)
     {
         var hierarchy = new List<TypeDeclarationModel>
         {

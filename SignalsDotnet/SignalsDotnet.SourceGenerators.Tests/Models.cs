@@ -152,3 +152,35 @@ public partial class Generic<T> where T : class, new()
 {
     public partial T? Item { get; set; }
 }
+
+public partial class OnlyComputed
+{
+    [Computed]
+    int ComputeConstant() => 42;
+}
+
+[GenerateSignals]
+[GenerateNotifyPropertyChanged]
+public partial record PersonRecord
+{
+    public partial string Name { get; set; }
+    public partial int Age { get; set; }
+
+    [Computed]
+    string ComputeFullName() => $"{Name} {Age}";
+}
+
+[GenerateSignals]
+public partial record struct PointRecordStruct
+{
+    public partial int X { get; set; }
+}
+
+public partial record Container
+{
+    [GenerateSignals]
+    public partial record NestedRecord
+    {
+        public partial string Name { get; set; }
+    }
+}
