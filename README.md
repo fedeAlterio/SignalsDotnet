@@ -1,7 +1,32 @@
-## XAML
+# SignalsDotnet
+
+[![Core NuGet](https://img.shields.io/nuget/v/SignalsDotnet.svg?label=core%20nuget&color=blue)](https://www.nuget.org/packages/SignalsDotnet)
+[![Blazor NuGet](https://img.shields.io/nuget/v/SignalsDotnet.Blazor.svg?label=blazor%20nuget&color=purple)](https://www.nuget.org/packages/SignalsDotnet.Blazor)
+[![License](https://img.shields.io/github/license/fedeAlterio/SignalsDotnet)](LICENSE)
+
+**Fine-grained reactive state for .NET.** Wrap a value in a signal, read it inside a computation, and the computation re-runs by itself whenever that value changes — no manual subscriptions, no `PropertyChanged` plumbing, no dependency lists to keep in sync.
+
+Signals are built on [R3](https://github.com/Cysharp/R3) (a modern ReactiveX implementation), so every signal is also an `Observable<T>` and the whole Rx operator set stays available to you.
+
+## A signal in three lines
+
+```c#
+var firstName = new Signal<string>("Ada");
+var lastName = new Signal<string>("Lovelace");
+var fullName = Signal.Computed(() => $"{firstName.Value} {lastName.Value}");
+
+Console.WriteLine(fullName.Value); // Ada Lovelace
+firstName.Value = "Grace";
+Console.WriteLine(fullName.Value); // Grace Lovelace
+```
+
+`fullName` discovered its own dependencies simply by reading them. Nothing declared that it depends on `firstName`.
+
+## In a XAML app
+
 <img src="./assets/demo.gif"/>
 
-## Blazor
+## In a Blazor app
 
 ```razor
 @page "/counter"
@@ -44,25 +69,19 @@
 }
 ```
 
-# SignalsDotnet
-
-[![Core NuGet](https://img.shields.io/nuget/v/SignalsDotnet.svg?label=core%20nuget&color=blue)](https://www.nuget.org/packages/SignalsDotnet)
-[![Blazor NuGet](https://img.shields.io/nuget/v/SignalsDotnet.Blazor.svg?label=blazor%20nuget&color=purple)](https://www.nuget.org/packages/SignalsDotnet.Blazor)
-[![License](https://img.shields.io/github/license/fedeAlterio/SignalsDotnet)](LICENSE)
-
-## Angular Signals for .NET
-This library is a .NET port of Angular Signals, adapted for .NET MVVM UI frameworks and Blazor applications and built on top of [R3](https://github.com/Cysharp/R3) (a variant of ReactiveX).
-
-If you need an introduction to what signals are, see: https://angular.io/guide/signals
-
 ## Table of Contents
 
 - [Get Started](#get-started)
 - [Core Concepts](#core-concepts)
+- [Source Generator](#source-generator)
+  - [Computed and Async Properties](#computed-and-async-properties)
+  - [ModelChanged](#modelchanged)
+  - [Records](#records)
+  - [Serialization](#serialization)
 - [Basic Examples](#basic-examples)
 - [Signal Types](#signal-types)
   - [Signal&lt;T&gt;](#signalt)
-  - [CollectionSignal&lt;T&gt;](#collectionsignalt)
+  - [CollectionSignal&lt;TObservableCollection&gt;](#collectionsignaltobservablecollection)
   - [DictionarySignal&lt;TKey, TValue&gt;](#dictionarysignaltkey-tvalue)
   - [Factory Methods](#factory-methods)
 - [Computed Signals & Linked Signals](#computed-signals--linked-signals)
@@ -82,155 +101,242 @@ If you need an introduction to what signals are, see: https://angular.io/guide/s
   - [Signal Events](#signal-events)
   - [WhenAnyChanged](#whenanychanged)
   - [CancellationSignal](#cancellationsignal)
+- [Subscription Strategies](#subscription-strategies)
 - [Blazor Integration](#blazor-integration)
   - [TrackedScope Component](#trackedscope-component)
-  - [How TrackedScope Works](#how-trackedscope-works)
   - [Inspiration](#inspiration)
 
 ---
 
 # Get Started
 
-It is really easy to get started. Replace all bound ViewModel properties and ObservableCollections with Signals to get automatic change tracking and reactive updates.
+Adoption is incremental. Hold state in signals instead of plain fields and properties, read those signals wherever you derive something from them, and the derivations keep themselves current. There is no container to configure and no framework to buy into — signals are ordinary objects you can introduce one at a time.
+
+Every signal also implements `INotifyPropertyChanged`.
 
 ## Core Concepts
 
 ### Signal Types
 
-- **`Signal<T>`** - A writable signal that holds a value of type T
-- **`IReadOnlySignal<T>`** - A read-only signal (computed or readonly)
-- **`IAsyncReadOnlySignal<T>`** - A read-only signal with async computation
-- **`ISignal<T>`** - A writable signal interface (linked signals)
-- **`IAsyncSignal<T>`** - A writable signal with async computation
-- **`CollectionSignal<T>`** - A signal wrapping an ObservableCollection
+| Type | Role |
+|---|---|
+| `Signal<T>` | Writable signal holding a value of type `T` |
+| `IReadOnlySignal<T>` | Read-only signal — computed or readonly |
+| `IAsyncReadOnlySignal<T>` | Read-only signal backed by an async computation |
+| `ISignal<T>` | Writable signal interface, used by linked signals |
+| `IAsyncSignal<T>` | Writable signal backed by an async computation |
+| `CollectionSignal<T>` | Signal wrapping an `ObservableCollection` |
+| `DictionarySignal<TKey, TValue>` | Reactive dictionary with per-key tracking |
 
 ### Key Features
 
-✅ **Multi-Platform** - Works with MAUI, WPF, Avalonia, Uno Platform, Blazor, Unity, Godot, and other .NET frameworks  
-✅ **Automatic Dependency Tracking** - Signals automatically track their dependencies  
-✅ **Computed Signals** - Derive values from other signals automatically  
-✅ **Async Support** - Full support for asynchronous computations with cancellation  
-✅ **Collection Signals** - Specialized signals that support ObservableCollections  
-✅ **Effects** - Run side effects when signals change  
-✅ **Signal Events** - Events that will cause computed signals to recompute  
-✅ **Full Rx Power** - Signals are Observables, giving you access to the entire R3/ReactiveX ecosystem  
-✅ **Memory Efficient** - Support Weak subscriptions to prevent memory leaks
+- **Runs Everywhere** — MAUI, WPF, Avalonia, Uno Platform, Blazor, Unity, Godot, and plain .NET
+- **Automatic Dependency Tracking** — dependencies are discovered as they are read, not declared
+- **Computed Signals** — derived values that stay in sync by themselves
+- **Async Support** — asynchronous computations with cancellation and concurrency control
+- **Deep Collection Reactivity** — collection signals react to the collection *and* to what is inside it
+- **Effects** — side effects that re-run when the signals they touch change
+- **Signal Events** — notifications that fire even when the value is unchanged
+- **Full Rx Power** — every signal is an `Observable`, so the entire R3/ReactiveX ecosystem applies
+- **Leak Resistant** — weak subscriptions and ref-counting keep long-lived sources from pinning objects alive
+- **Source Generator** — declare partial properties, skip the boilerplate
+
+---
+
+## Source Generator
+
+Declaring signals by hand gets repetitive. Mark a partial class with `[GenerateSignals]`, declare partial auto properties, and the generator backs each one with a `Signal<T>`:
+
+```c#
+[GenerateSignals]
+public partial class Person
+{
+    public partial string Name { get; set; }
+    public partial int Age { get; set; }
+}
+```
+
+`Name` and `Age` now read and write like ordinary properties, but they are signals underneath — assigning to them notifies anything that depends on them. For each property you also get a `{Name}Signal` member exposing the underlying `IReadOnlySignal<T>`, for when you need the signal itself rather than its value:
+
+```c#
+var person = new Person { Name = "Ada", Age = 36 };
+
+var summary = Signal.Computed(() => $"{person.Name} is {person.Age}");
+
+person.Age = 37;                          // summary recomputes
+person.AgeSignal.Values.Subscribe(Print); // the signal behind the property
+```
+
+### Computed and Async Properties
+
+The same class can declare derived properties. A method named `Compute<PropertyName>` marked `[Computed]` generates the property it computes, and `[AsyncComputed]` does the same for work that takes a `CancellationToken`:
+
+```c#
+[GenerateSignals]
+[GenerateNotifyPropertyChanged]
+public partial class Person
+{
+    public partial string Name { get; set; }
+    public partial int Age { get; set; }
+
+    [Computed]
+    string ComputeFullName() => $"{Name} {Age}";
+
+    [AsyncComputed(ConcurrentChangeStrategy = ConcurrentChangeStrategy.CancelCurrent)]
+    async ValueTask<bool> ComputeIsAdult(CancellationToken token)
+    {
+        await Task.Delay(100, token);
+        return Age >= 18;
+    }
+}
+```
+
+That yields:
+
+| Member | From | Notes |
+|---|---|---|
+| `Name`, `Age` | partial properties | read/write, backed by signals |
+| `NameSignal`, `AgeSignal` | partial properties | `IReadOnlySignal<T>` access |
+| `FullName` + `FullNameSignal` | `[Computed] ComputeFullName()` | method must be named `Compute<PropertyName>` |
+| `IsAdult` + `IsAdultSignal` + `IsIsAdultComputing` | `[AsyncComputed]` | takes a `CancellationToken`, returns `Task<T>`/`ValueTask<T>` |
+| `ModelChanged` | all writable signals | `IReadOnlySignal<Person>` that re-emits the instance on any change |
+| `PropertyChanged` | `[GenerateNotifyPropertyChanged]` | optional; pass `false` to disable |
+
+Other attributes: `[Signal]` backs a single property without annotating the class, and `[SignalIgnore]` excludes one.
+
+Implement `partial void OnInitialized()` to run logic after the generated signals are ready.
+
+### ModelChanged
+
+A computed signal that tracks every writable signal property and yields the model itself, so it re-emits whenever any of them changes:
+
+```c#
+person.ModelChanged.Values.Subscribe(p => Console.WriteLine(p));
+
+var revision = Signal.Computed(() =>
+{
+    _ = person.ModelChanged.Value;
+    return DateTime.UtcNow;
+});
+```
+
+Computed and async computed properties are not tracked, since they derive from the same signals. It is not generated for structs, or when a `ModelChanged` member already exists.
+
+### Records
+
+Records are supported and keep their value semantics: the generator emits `PrintMembers`, `Equals`, `GetHashCode`, and a copy constructor that use **only the data properties**, so signals stay out of `ToString()` and equality, and `with` produces an independent copy.
+
+```c#
+[GenerateSignals]
+public partial record Person
+{
+    public partial string Name { get; set; }
+    public partial int Age { get; set; }
+}
+
+var a = new Person { Name = "Ada", Age = 36 };
+Console.WriteLine(a);            // Person { Name = Ada, Age = 36 }
+Console.WriteLine(a == new Person { Name = "Ada", Age = 36 });  // True
+
+var older = a with { Age = 40 }; // independent copy, a.Age is still 36
+```
+
+Positional records (primary constructors) are not supported and report `SIG011`, because their generated properties and constructor conflict with the generated ones. `record struct` is supported, except that `with` copies signal references rather than cloning them.
+
+### Serialization
+
+All generated members carry `[IgnoreDataMember]` and `[JsonIgnore]`, so only the data properties are serialized and DTOs round-trip:
+
+```c#
+var json = JsonSerializer.Serialize(new Person { Name = "Ada", Age = 36 });
+// {"Name":"Ada","Age":36}
+var restored = JsonSerializer.Deserialize<Person>(json);
+```
+
+`[JsonIgnore]` is only emitted when `System.Text.Json` is available in the consuming project.
 
 ---
 
 ## Basic Examples
 
-### Example 1: Simple Login Form
+### A form that validates itself
+
+`CanLogin` recomputes on every keystroke in either field, with nothing wiring the two together:
+
 ```c#
 public class LoginViewModel
 {
-    public LoginViewModel()
-    {
-        CanLogin = Signal.Computed(() => !string.IsNullOrWhiteSpace(Username.Value) && !string.IsNullOrWhiteSpace(Password.Value));
-        LoginCommand = new DelegateCommand(Login, () => CanLogin.Value).RaiseCanExecuteChangedAutomatically();
-    }
-
     public Signal<string> Username { get; } = new();
     public Signal<string> Password { get; } = new();
     public IReadOnlySignal<bool> CanLogin { get; }
 
-    public ICommand LoginCommand { get; }
-    public void Login() { /* Login */ }
-}
-
-public static class DelegateCommandExtensions
-{
-    // This is specific for Prism, but the same approach can be used in other MVVM Frameworks
-    public static T RaiseCanExecuteChangedAutomatically<T>(this T @this) where T : DelegateCommand
+    public LoginViewModel()
     {
-        var signal = Signal.Computed(@this.CanExecute, config => config with { SubscribeWeakly = false });
-        signal.Subscribe(_ => @this.RaiseCanExecuteChanged());
-        _ = signal.Value;
-        return @this;
+        CanLogin = Signal.Computed(() => !string.IsNullOrWhiteSpace(Username.Value)
+                                      && !string.IsNullOrWhiteSpace(Password.Value));
     }
 }
 ```
 
-### Example 2: Async Validation with Computed Factory
+Commands can ride along on that signal. The pattern below is Prism's `DelegateCommand`, but any MVVM framework works the same way:
+
+```c#
+public static T RaiseCanExecuteChangedAutomatically<T>(this T @this) where T : DelegateCommand
+{
+    var signal = Signal.Computed(@this.CanExecute, config => config with { SubscribeWeakly = false });
+    signal.Subscribe(_ => @this.RaiseCanExecuteChanged());
+    _ = signal.Value;
+    return @this;
+}
+```
+
+### Async validation that cancels itself
+
+The factory applies one deactivation trigger and one error handler to everything it creates. `IsUsernameValid` re-runs when `Username` changes — cancelling the previous request — and `IsComputing` lets the UI disable the button while it is in flight:
+
 ```c#
 public class LoginViewModel
 {
-    // Value set from outside.
     public Signal<bool> IsDeactivated { get; } = new(false);
-    
-    public LoginViewModel()
-    {      
-        var computedFactory = ComputedSignalFactory.Default
-            .DisconnectEverythingWhen(IsDeactivated.Values)
-            .OnException(exception =>
-            {
-                /* log or do something with it */
-            });
-
-        // Will be cancelled on deactivation, or if the username signal changes during the await
-        IsUsernameValid = computedFactory.AsyncComputed(
-            async cancellationToken => await IsUsernameValidAsync(Username.Value, cancellationToken),
-            false, 
-            ConcurrentChangeStrategy.CancelCurrent);
-
-        // Async computed signals have a (sync) signal that notifies us when the async computation is running
-        CanLogin = computedFactory.Computed(() => !IsUsernameValid.IsComputing.Value
-                                                  && IsUsernameValid.Value
-                                                  && !string.IsNullOrWhiteSpace(Password.Value));
-
-        computedFactory.Effect(UpdateApiCalls);
-
-        // This signal will be recomputed both when the collection changes, and when endDate of the last element changes automatically!
-        TotalApiCallsText = computedFactory.Computed(() =>
-        {
-            var lastCall = ApiCalls.Value.LastOrDefault();
-            return $"Total api calls: {ApiCalls.Value.Count}. Last started at {lastCall?.StartedAt}, and ended at {lastCall?.EndedAt.Value}";
-        })!;
-    }
-
     public Signal<string?> Username { get; } = new("");
     public Signal<string> Password { get; } = new("");
     public IAsyncReadOnlySignal<bool> IsUsernameValid { get; }
     public IReadOnlySignal<bool> CanLogin { get; }
-    public IReadOnlySignal<string> TotalApiCallsText { get; }
-    public IReadOnlySignal<ObservableCollection<ApiCall>> ApiCalls { get; } = new ObservableCollection<ApiCall>().ToCollectionSignal();
 
-    async Task<bool> IsUsernameValidAsync(string? username, CancellationToken cancellationToken)
+    public LoginViewModel()
     {
-        await Task.Delay(3000, cancellationToken);
+        var factory = ComputedSignalFactory.Default
+            .DisconnectEverythingWhen(IsDeactivated.Values)
+            .OnException(exception => Logger.LogError(exception, "Computation failed"));
+
+        IsUsernameValid = factory.AsyncComputed(
+            async token => await IsUsernameValidAsync(Username.Value, token),
+            false,
+            ConcurrentChangeStrategy.CancelCurrent);
+
+        CanLogin = factory.Computed(() => !IsUsernameValid.IsComputing.Value
+                                       && IsUsernameValid.Value
+                                       && !string.IsNullOrWhiteSpace(Password.Value));
+    }
+
+    async Task<bool> IsUsernameValidAsync(string? username, CancellationToken token)
+    {
+        await Task.Delay(3000, token);
         return username?.Length > 2;
     }
-    
-    void UpdateApiCalls()
-    {
-        var isComputingUsername = IsUsernameValid.IsComputing.Value;
-        using var _ = Signal.UntrackedScope();
-
-        if (isComputingUsername)
-        {
-            ApiCalls.Value.Add(new ApiCall(startedAt: DateTime.Now));
-            return;
-        }
-
-        var call = ApiCalls.Value.LastOrDefault();
-        if (call is { EndedAt.Value: null })
-        {
-            call.EndedAt.Value = DateTime.Now;
-        }
-    }
-}
-
-public class ApiCall(DateTime startedAt)
-{
-    public DateTime StartedAt => startedAt;
-    public Signal<DateTime?> EndedAt { get; } = new();
 }
 ```
 
-### Example 3: Deep Reactive Collections
+### Reactivity through nested collections
+
+`YoungestPerson` recomputes when a city, house, room, or person is added or removed **and** when any single person's `Age` changes — four levels down, with no subscription code:
+
 ```c#
 public class YoungestPersonViewModel
 {
+    public CollectionSignal<ObservableCollection<City>> Cities { get; } = new();
+    public IReadOnlySignal<PersonCoordinates?> YoungestPerson { get; }
+
     public YoungestPersonViewModel()
     {
         YoungestPerson = Signal.Computed(() =>
@@ -241,35 +347,15 @@ public class YoungestPersonViewModel
                          from person in room.People.Value.EmptyIfNull()
                          select new PersonCoordinates(person, room, house, city);
 
-            var youngestPerson = people.DefaultIfEmpty()
-                                       .MinBy(x => x?.Person.Age.Value);
-            return youngestPerson;
+            return people.DefaultIfEmpty().MinBy(x => x?.Person.Age.Value);
         });
     }
-
-    public IReadOnlySignal<PersonCoordinates?> YoungestPerson { get; }
-    public CollectionSignal<ObservableCollection<City>> Cities { get; } = new();
 }
 
-public class Person
-{
-    public Signal<int> Age { get; } = new();
-}
-
-public class Room
-{
-    public CollectionSignal<ObservableCollection<Person>> People { get; } = new();
-}
-
-public class House
-{
-    public CollectionSignal<ObservableCollection<Room>> Rooms { get; } = new();
-}
-
-public class City
-{
-    public CollectionSignal<ObservableCollection<House>> Houses { get; } = new();
-}
+public class City   { public CollectionSignal<ObservableCollection<House>>  Houses { get; } = new(); }
+public class House  { public CollectionSignal<ObservableCollection<Room>>   Rooms  { get; } = new(); }
+public class Room   { public CollectionSignal<ObservableCollection<Person>> People { get; } = new(); }
+public class Person { public Signal<int> Age { get; } = new(); }
 
 public record PersonCoordinates(Person Person, Room Room, House House, City City);
 ```
@@ -278,11 +364,11 @@ public record PersonCoordinates(Person Person, Room Room, House House, City City
 
 ## Signal Types
 
-Every signal has a `Values` property that is an `Observable<T>` and notifies whenever the signal changes. Signals also provide `FutureValues` which skips the current value and only notifies on future changes.
+Every signal exposes `Values`, an `Observable<T>` that emits the current value and then every change. `FutureValues` is the same stream without the current value, for when you only care about what happens next.
 
 ### `Signal<T>`
 
-A `Signal<T>` is a writable signal wrapper around a value of type `T`. It implements `INotifyPropertyChanged` and raises the `PropertyChanged` event when its value changes.
+The workhorse: a writable box around a `T`. It raises `PropertyChanged` when the value changes.
 
 ```c#
 // Basic signal
@@ -305,15 +391,14 @@ public Signal<int> Counter { get; } = new(config => config with
 ```
 
 **Configuration Options:**
-- `Comparer` - Custom `IEqualityComparer<T>` to determine when to raise PropertyChanged
-- `RaiseOnlyWhenChanged` - Whether to raise PropertyChanged only when value actually changes (default: true)
-- `SubscriptionStrategy` - Controls when the upstream subscription activates:
-  - `Persistent` (default) - Subscribes once on first value access, stays subscribed for life
-  - `RefCount` - Subscribes only while listeners are observing `Values`/`FutureValues`, unsubscribes when all listeners leave (share + ref-count semantics)
+- `Comparer` — custom `IEqualityComparer<T>` deciding what counts as a change
+- `RaiseOnlyWhenChanged` — raise `PropertyChanged` only on an actual change (default: `true`)
+- `SubscribeWeakly` — hold upstream subscriptions weakly (default: `false`)
+- `SubscriptionStrategy` — when the upstream subscription is active; see [Subscription Strategies](#subscription-strategies)
 
 **Changing Global Defaults:**
 
-You can change the global default configuration that applies to all newly created signals:
+Defaults apply to every signal created afterwards, so set them once at startup:
 
 ```c#
 // Set new global defaults
@@ -330,11 +415,12 @@ var linkedSignal = Observable.Interval(TimeSpan.FromSeconds(1)).ToSignal();
 
 ### `CollectionSignal<TObservableCollection>`
 
-A `CollectionSignal<TObservableCollection>` wraps an `ObservableCollection` (or any `INotifyCollectionChanged`) and listens to both:
-1. Changes to its `Value` property
-2. Modifications within the collection itself (Add, Remove, Clear, etc.)
+Wraps an `ObservableCollection` (or any `INotifyCollectionChanged`) and listens on two channels at once:
 
-This enables deep reactive tracking - computed signals automatically update when items are added/removed or when nested properties change.
+1. Replacement of the collection itself, through the `Value` property
+2. Mutation of its contents — `Add`, `Remove`, `Clear`, and the rest
+
+That second channel is what makes deep reactivity work: a computed signal reading such a collection recomputes when items come and go, and — if the items themselves hold signals — when their properties change. Example 3 above walks four levels of this.
 
 ```c#
 // Basic collection signal
@@ -346,16 +432,16 @@ public CollectionSignal<ObservableCollection<Person>> People { get; } = new(
 );
 ```
 
-**Why use throttling?** Operations like `AddRange()` trigger multiple `CollectionChanged` events. Throttling batches these into a single notification per UI frame, improving performance.
+**Why throttle?** A call like `AddRange()` fires one `CollectionChanged` event per item, and each one would otherwise trigger a recomputation. Throttling collapses the burst into a single notification per UI frame.
 
 **Configuration Options:**
-- `collectionChangedConfiguration` - Configure how collection change events are processed (throttling, filtering, etc.)
-- `propertyChangedConfiguration` - Configure the signal's property changed behavior
-- `SubscribeWeakly` - Whether to subscribe to collection events weakly (default: false) to prevent memory leaks
+- `collectionChangedConfiguration` — how collection change events are processed (throttling, filtering, …)
+- `propertyChangedConfiguration` — the signal's own property-changed behavior
+- `SubscribeWeakly` — subscribe to collection events weakly to avoid pinning the collection (default: `false`)
 
 ### `DictionarySignal<TKey, TValue>`
 
-A `DictionarySignal<TKey, TValue>` implements `IDictionary<TKey, TValue>` and provides fine-grained reactive tracking for dictionary operations. Each key access is tracked independently, so computed signals only recompute when the specific keys they depend on change.
+Implements `IDictionary<TKey, TValue>` with tracking at the granularity of individual keys. A computed signal that reads `Scores["player1"]` depends on that key alone — writes to any other key leave it untouched.
 
 ```c#
 public class ViewModel
@@ -379,7 +465,7 @@ public class ViewModel
 
 **Key Features:**
 
-**Fine-Grained Key Tracking**: Computed signals only subscribe to the keys they actually access. When a computed signal stops accessing a key, the tracking is automatically cleaned up.
+**Fine-Grained Key Tracking**: subscriptions follow the keys actually read on the last run. Below, flipping `useA` moves the dependency from `"a"` to `"b"` and the stale one is released:
 
 ```c#
 var dictionary = new DictionarySignal<string, int>();
@@ -396,7 +482,7 @@ _ = score.Value;
 useA.Value = false;
 ```
 
-**Reactive Collections**: Track changes to `Keys`, `Values`, and `Count` properties:
+**Reactive Views**: `Keys`, `Values`, and `Count` are tracked as well:
 
 ```c#
 var keyCount = Signal.Computed(() => dictionary.Keys.Count);
@@ -404,7 +490,7 @@ var keyCount = Signal.Computed(() => dictionary.Keys.Count);
 var totalScore = Signal.Computed(() => dictionary.Values.Sum());
 ```
 
-**Operations**: All standard dictionary operations are supported and reactive:
+**Operations**: the full `IDictionary` surface works, and every mutation is reactive:
 
 ```c#
 dictionary.Add("player3", 75);
@@ -415,7 +501,7 @@ dictionary.Clear();
 dictionary["player3"] = 200;
 ```
 
-**Memory Efficient**: Key tracking subscriptions are automatically removed when computed signals no longer access a specific key, preventing memory leaks in scenarios with dynamic key access patterns.
+**Memory Efficient**: because per-key subscriptions are dropped as soon as a computation stops reading that key, dictionaries with churning or unbounded key sets do not accumulate dead trackers.
 
 ### Factory Methods
 
@@ -446,7 +532,7 @@ var refCountSignal = Observable.Interval(TimeSpan.FromSeconds(1))
 
 ## Computed Signals & Linked Signals
 
-Computed signals automatically derive their values from other signals. They track dependencies automatically and recompute when any dependency changes.
+A computed signal is a value defined by an expression rather than by assignment. It watches whatever that expression reads and recomputes when any of it changes. Computed signals are ref-counted by default, so an unobserved one does no work at all — see [Subscription Strategies](#subscription-strategies).
 
 ### Creating Computed Signals
 
@@ -464,7 +550,7 @@ Console.WriteLine(fullName.Value); // "Jane Doe"
 
 ### Linked Signals
 
-Linked signals are computed signals that can also be manually written to:
+A linked signal is computed, but you can also write to it. The manual value holds until the source changes, at which point the computation takes over again:
 
 ```c#
 var source = new Signal<int>(10);
@@ -505,7 +591,7 @@ if (isUsernameValid.IsComputing.Value)
 
 ### Using ComputedSignalFactory
 
-For more control over computed signals, use `ComputedSignalFactory`:
+`ComputedSignalFactory` lets you apply one policy — error handling, a deactivation trigger, a scheduler — to a whole group of signals instead of repeating it at each call site:
 
 ```c#
 public class LoginViewModel
@@ -558,29 +644,29 @@ public class LoginViewModel
 
 ### ConcurrentChangeStrategy
 
-In an async computed signal, dependencies can change while the computation function is running. Use `ConcurrentChangeStrategy` to control this behavior:
+An async computation takes time, and a dependency may change before it finishes. `ConcurrentChangeStrategy` says what to do about it:
 
-- **`ConcurrentChangeStrategy.CancelCurrent`** - Cancels the current computation and starts a new one immediately
-- **`ConcurrentChangeStrategy.ScheduleNext`** - Queues the next computation to run after the current one completes (max 1 queued)
+- **`CancelCurrent`** — cancel the in-flight computation and restart immediately. Right for validation and search-as-you-type, where only the latest result matters.
+- **`ScheduleNext`** — let the current run finish, then run once more (at most one queued). Right when the computation has side effects or must not be interrupted.
 
-Both strategies respect the `DisconnectEverythingWhen` cancellation.
+Either way, `DisconnectEverythingWhen` cancellation still applies.
 
 ### How it Works
 
-Computed signals use automatic dependency tracking:
+There is no magic in the dependency tracking, just bookkeeping around the `Value` getter:
 
-1. Before executing the computation function, the signal subscribes to a tracking event
-2. When any signal's `Value` getter is called, it notifies the tracker
-3. The computed signal subscribes to all accessed signals
-4. When any dependency changes, the computation reruns and tracks dependencies again
+1. Before running the computation, the signal installs itself as the current tracker
+2. Every `Value` getter that runs reports itself to that tracker
+3. When the computation returns, the signal subscribes to exactly the signals that reported in
+4. Any of them changing re-runs the computation, which re-collects the dependency set from scratch
 
-This dynamic tracking means computed signals only subscribe to signals that are actually accessed in each execution.
+Because the set is rebuilt each run, dependencies follow your control flow. A branch that wasn't taken creates no subscription, and a dependency abandoned on the latest run is released.
 
 ---
 
 ## Effects
 
-Effects are reactive side effects that automatically track signal dependencies and re-run when any dependency changes. They are similar to computed signals but are used for side effects instead of computing values.
+An effect tracks dependencies exactly like a computed signal, but produces no value — it exists for what it *does*. Reach for one when the reaction to a change is logging, navigation, persistence, or a call out to something else.
 
 ### Synchronous Effects
 ```c#
@@ -618,7 +704,7 @@ public class ViewModel
 
 ### Atomic Operations
 
-Effects can be batched using atomic operations to prevent multiple executions during complex updates:
+Writing several signals in a row would normally run dependent effects once per write, including on the inconsistent intermediate states. Wrap the writes in an atomic operation and effects run once, at the end:
 
 ```c#
 Effect.AtomicOperation(() =>
@@ -642,7 +728,7 @@ await Effect.AtomicOperationAsync(async () =>
 
 ### Custom Schedulers
 
-You can specify a custom scheduler for effect execution:
+Pass a scheduler to control where and when the effect body runs — useful for marshalling to a UI thread or coalescing to a frame:
 
 ```c#
 var scheduler = TimeProvider.System;
@@ -659,7 +745,7 @@ var effect = new Effect(() =>
 
 ### Untracked
 
-To disable automatic tracking of signal changes in computed signals, use `Signal.Untracked()` or the equivalent property shortcuts:
+Sometimes a computation needs to *read* a signal without *depending* on it. `Signal.Untracked()` and the `UntrackedValue` shortcuts read the current value while staying invisible to the tracker:
 
 ```c#
 public class LoginViewModel
@@ -691,7 +777,7 @@ public class LoginViewModel
 
 ### Signal Events
 
-Signal Events are signals that always notify subscribers, even when set to the same value. They're useful for event-driven scenarios:
+A signal event notifies on every `Invoke()`, even when nothing about the value changed. Use it for things that *happen* rather than things that *are* — a refresh request, a submitted command, a tick:
 
 ```c#
 public class ViewModel
@@ -717,7 +803,7 @@ public class ViewModel
 
 ### WhenAnyChanged
 
-Combine multiple signals into a single observable that emits whenever any of them changes:
+Merge several signals into one observable that fires whenever any of them changes, regardless of their types:
 
 ```c#
 var signal1 = new Signal<int>();
@@ -730,7 +816,7 @@ anyChanged.Subscribe(_ => Console.WriteLine("At least one signal changed"));
 
 ### CancellationSignal
 
-Convert a boolean observable into a signal that provides cancellation tokens:
+Turns a boolean observable into a signal of `CancellationToken`s: each time the flag goes true, the current token is cancelled and a fresh one takes its place. Handy for tying async work to a lifecycle such as view deactivation:
 
 ```c#
 Observable<bool> isDeactivated = this.IsDeactivated();
@@ -742,19 +828,42 @@ await SomeAsyncOperation(cancellationSignal.Value);
 
 ---
 
+
+## Subscription Strategies
+
+`SubscriptionStrategy` controls how long a computed or observable-backed signal stays subscribed to its source:
+
+- **`RefCount`** (default for computed signals) — subscribes while at least one observer is listening to `Values`/`FutureValues`, and unsubscribes when the last one goes away. An unobserved signal costs nothing, and a re-observed one starts up again. This propagates: when a ref-counted computed goes idle it releases its dependencies, so a whole derived graph can wind down behind a closed view.
+- **`Persistent`** (default for observable-backed signals) — subscribes once on first value access and keeps that subscription for the signal's lifetime. Pick it when the signal must not miss anything while unobserved, or when re-subscribing to the source is expensive.
+
+```c#
+var signal = Signal.Computed(() => a.Value + b.Value,
+                             config => config with { SubscriptionStrategy = SubscriptionStrategy.Persistent });
+
+var ticking = Observable.Interval(TimeSpan.FromSeconds(1))
+                        .ToSignal(config => config with { SubscriptionStrategy = SubscriptionStrategy.RefCount });
+```
+
+Defaults can be changed globally:
+
+```c#
+ReadonlySignalConfiguration.Default = ReadonlySignalConfiguration.Default with
+{
+    SubscriptionStrategy = SubscriptionStrategy.Persistent
+};
+```
+
+> With `RefCount`, a signal is inert until something observes it, and while idle its value is whatever it last saw. Subscribe to `Values` (not only `FutureValues`) to activate it and get the current value. In XAML and Blazor this is automatic — a binding or a `TrackedScope` is itself an observer.
+
+---
+
 ## Blazor Integration
 
-The `SignalsDotnet.Blazor` package provides seamless integration with Blazor, allowing Blazor components to automatically re-render when the signals they depend on change.
-
-### Table of Contents
-
-- [TrackedScope Component](#trackedscope-component)
-- [How TrackedScope Works](#how-trackedscope-works)
-- [Inspiration](#inspiration)
+The `SignalsDotnet.Blazor` package lets components re-render on their own when the signals they read change.
 
 ### TrackedScope Component
 
-`TrackedScope` is a Razor component that creates a reactive container. Wrap any portion of a Blazor component's markup in a `<TrackedScope>` to automatically track any signals retrieved via their `Value` property during the render. `InvokeAsync(StateHasChanged)` is used behind the scene to dispatch changes on the correct SynchronizationContext.
+`TrackedScope` marks a reactive region of markup. Every signal read through `.Value` while that region renders becomes a dependency of it, and a change to any of them re-renders that region alone rather than the whole component. Scopes nest, so you can keep a frequently-changing value from invalidating everything around it. Updates are dispatched via `InvokeAsync(StateHasChanged)`, so they land on the right `SynchronizationContext`.
 
 ```razor
 <TrackedScope>
