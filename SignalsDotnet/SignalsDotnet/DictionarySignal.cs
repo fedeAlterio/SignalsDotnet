@@ -91,7 +91,7 @@ public class DictionarySignal<TKey, TValue> : IDictionary<TKey, TValue> where TK
         ref var signal = ref CollectionsMarshal.GetValueRefOrAddDefault(KeySignals, key, out var exists);
         if (exists)
         {
-            signal.Track();
+            signal!.Track();
             return;
         }
 
@@ -172,6 +172,7 @@ public class DictionarySignal<TKey, TValue> : IDictionary<TKey, TValue> where TK
     }
     public bool IsReadOnly => false;
 
+#pragma warning disable CS8767
     public bool TryGetValue(TKey key, [MaybeNullWhen(false)] out TValue value)
     {
         TrackKey(key);
@@ -184,6 +185,7 @@ public class DictionarySignal<TKey, TValue> : IDictionary<TKey, TValue> where TK
         value = default;
         return false;
     }
+#pragma warning restore CS8767
 
     public ICollection<TKey> Keys
     {
@@ -276,8 +278,10 @@ public class DictionarySignal<TKey, TValue> : IDictionary<TKey, TValue> where TK
             var newCount = Interlocked.Decrement(ref _subscriptionCount);
             if (newCount != 0)
                 return;
+           
+            if (dictionary.KeySignals.TryGetValue(key, out var current) && ReferenceEquals(current, this))
+                dictionary.KeySignals.Remove(key);
 
-            dictionary.KeySignals.Remove(key);
             dictionary._keysChanged.Invoke();
         }
 

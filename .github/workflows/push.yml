@@ -14,13 +14,13 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 6.0.x
+        dotnet-version: 8.0.x
     - name: Restore dependencies
       run: dotnet restore ./SignalsDotnet
     - name: Build
       run: dotnet build -c Release  ./SignalsDotnet --no-restore
     - name: Test
-      run: dotnet test -c Release  ./SignalsDotnet/SignalsDotnet.Tests --no-build --verbosity normal
+      run: dotnet test -c Release  ./SignalsDotnet --no-build --verbosity normal
     - name: Benchmarks
       run: | 
         dotnet build -c Release  ./SignalsDotnet/SignalsDotnet.PeformanceTests/ 

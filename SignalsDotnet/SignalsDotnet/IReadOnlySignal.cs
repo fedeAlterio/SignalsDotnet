@@ -6,6 +6,7 @@ namespace SignalsDotnet;
 public interface INotifySignalChanged
 {
     Observable<Unit> FutureValues { get; }
+    Observable<Unit> FutureValuesUntracked => FutureValues;
 }
 public interface IReadOnlySignal : INotifyPropertyChanged, INotifySignalChanged
 {

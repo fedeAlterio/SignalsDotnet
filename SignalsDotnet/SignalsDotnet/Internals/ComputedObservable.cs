@@ -32,8 +32,10 @@ internal sealed class ComputedObservable<T> : Observable<T>
         DisposableBag _disconnectSubscription;
 
         readonly HashSet<INotifySignalChanged> _signalsRequested = new(ReferenceEqualityComparer<INotifySignalChanged>.Instance);
+      
+        readonly Dictionary<INotifySignalChanged, IDisposable> _signalSubscriptions = new(ReferenceEqualityComparer<INotifySignalChanged>.Instance);
+
         readonly SyncCompletionSource _signalChangedAwaitable = new();
-        DisposableBag _signalChangeSubscription;
         int _anySignalArrived;
         CancellationTokenSource? _cts;
         readonly Action<INotifySignalChanged> _onSignalRequested;
@@ -53,14 +55,17 @@ internal sealed class ComputedObservable<T> : Observable<T>
         void OnSignalRequested(INotifySignalChanged signal)
         {
             if (!_signalsRequested.Add(signal)) return;
-            signal.FutureValues.Subscribe(_onSignalChanged).AddTo(ref _signalChangeSubscription);
+
+            // Already subscribed from a previous compute and still a live dependency: keep it.
+            if (_signalSubscriptions.ContainsKey(signal)) return;
+
+            _signalSubscriptions[signal] = signal.FutureValues.Subscribe(_onSignalChanged);
         }
 
         void OnSignalChanged(Unit _)
         {
             if (Interlocked.CompareExchange(ref _anySignalArrived, 1, 0) == 1) return;
 
-            _signalChangeSubscription.Dispose();
             _cts?.Cancel();
             var scheduler = _observable._scheduler;
             if (scheduler is not null)
@@ -115,7 +120,6 @@ internal sealed class ComputedObservable<T> : Observable<T>
             _anySignalArrived = 0;
 
             _disconnectSubscription = new();
-            _signalChangeSubscription = new DisposableBag().AddTo(ref _disconnectSubscription);
 
             if (_observable._concurrentChangeStrategy == ConcurrentChangeStrategy.CancelCurrent)
             {
@@ -132,14 +136,18 @@ internal sealed class ComputedObservable<T> : Observable<T>
 
             try
             {
+                T value;
                 try
                 {
-                    return new(await _observable._func(cancellationToken));
+                    value = await _observable._func(cancellationToken);
                 }
                 finally
                 {
                     signalRequestedSubscription.Dispose();
                 }
+
+                DropStaleSignalSubscriptions();
+                return new(value);
             }
             catch (OperationCanceledException)
             {
@@ -158,10 +166,35 @@ internal sealed class ComputedObservable<T> : Observable<T>
             }
         }
 
+        // Only dependencies that were not read by the compute that just finished are no longer
+        // valid: dispose exactly those, leaving still-live dependencies subscribed untouched.
+        void DropStaleSignalSubscriptions()
+        {
+            List<INotifySignalChanged>? stale = null;
+            foreach (var subscribedSignal in _signalSubscriptions.Keys)
+            {
+                if (!_signalsRequested.Contains(subscribedSignal))
+                    (stale ??= new()).Add(subscribedSignal);
+            }
+
+            if (stale is null) return;
+
+            foreach (var signal in stale)
+            {
+                _signalSubscriptions[signal].Dispose();
+                _signalSubscriptions.Remove(signal);
+            }
+        }
+
         public void Dispose()
         {
             _disposed.Cancel();
             _disposed.Dispose();
+
+            foreach (var subscription in _signalSubscriptions.Values)
+                subscription.Dispose();
+
+            _signalSubscriptions.Clear();
         }
     }
 

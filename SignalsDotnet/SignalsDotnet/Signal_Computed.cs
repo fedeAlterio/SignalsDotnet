@@ -34,6 +34,72 @@ public partial class Signal
         return ComputedObservable(func.ToAsyncValueTask(), fallbackValue);
     }
 
+    public static Observable<T> ComputedObservable<T>(Func<T> func)
+    {
+        return ComputedObservable(func.ToAsyncValueTask(), static () => default);
+    }
+
+    public static IAwaitable<T> WaitForChangeAsync<T>(Func<T> action, CancellationToken cancellationToken = default)
+    {
+        var source = new SyncCompletionSource<T>();
+        var registration = new SingleAssignmentDisposable();
+        var completionClaimed = 0;
+
+        bool TryClaimCompletion() => Interlocked.CompareExchange(ref completionClaimed, 1, 0) == 0;
+
+        void OnSignalChanged()
+        {
+            if (!TryClaimCompletion())
+                return;
+
+            registration.Dispose();
+
+            T value;
+            try
+            {
+                value = Untracked(action);
+            }
+            catch (Exception exception)
+            {
+                source.Error = exception;
+                source.SetCompleted();
+                return;
+            }
+
+            source.SetResult(value);
+        }
+
+        using (UntrackedScope())
+        using (TrackedScope(out var subscription, OnSignalChanged))
+        {
+            if (cancellationToken.CanBeCanceled)
+            {
+                registration.Disposable = cancellationToken.Register(() =>
+                {
+                    subscription.Dispose();
+                    if (!TryClaimCompletion())
+                        return;
+
+                    source.Error = new OperationCanceledException(cancellationToken);
+                    source.SetCompleted();
+                });
+            }
+
+            try
+            {
+                action();
+            }
+            catch
+            {
+                registration.Dispose();
+                subscription.Dispose();
+                throw;
+            }
+        }
+
+        return source;
+    }
+
     internal static ISignal<T> Computed<T>(Func<CancellationToken, ValueTask<T>> func,
                                                    Optional<T> startValueOptional,
                                                    Func<Optional<T>> fallbackValue,
@@ -46,7 +112,7 @@ public partial class Signal
             valueObservable = valueObservable.Prepend(startValue);
         }
 
-        return new FromObservableSignal<T>(valueObservable, configuration);
+        return valueObservable.ToLinkedSignal(configuration);
     }
 
     internal static Observable<T> ComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func,
