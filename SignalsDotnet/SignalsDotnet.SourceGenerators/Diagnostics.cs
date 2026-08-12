@@ -92,6 +92,14 @@ static class Diagnostics
         DiagnosticSeverity.Error,
         true);
 
+    public static readonly DiagnosticDescriptor UserParameterlessConstructorNotSupported = new(
+        "SIG013",
+        "Type must not declare a parameterless constructor",
+        "Type '{0}' declares a parameterless constructor, which conflicts with the generated one that initializes the signals. Remove it and put your initialization logic in a partial method 'void OnInitialized()', which the generated constructor calls.",
+        "SignalsDotnet",
+        DiagnosticSeverity.Error,
+        true);
+
     public static readonly DiagnosticDescriptor RefLikePropertyNotSupported = new(
         "SIG005",
         "Ref like types are not supported",

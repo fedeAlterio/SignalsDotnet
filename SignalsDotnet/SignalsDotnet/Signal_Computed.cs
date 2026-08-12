@@ -72,16 +72,6 @@ public partial class Signal
         using (UntrackedScope())
         using (TrackedScope(out var subscription, OnSignalChanged))
         {
-            try
-            {
-                action();
-            }
-            catch
-            {
-                subscription.Dispose();
-                throw;
-            }
-
             if (cancellationToken.CanBeCanceled)
             {
                 registration.Disposable = cancellationToken.Register(() =>
@@ -93,6 +83,17 @@ public partial class Signal
                     source.Error = new OperationCanceledException(cancellationToken);
                     source.SetCompleted();
                 });
+            }
+
+            try
+            {
+                action();
+            }
+            catch
+            {
+                registration.Dispose();
+                subscription.Dispose();
+                throw;
             }
         }
 

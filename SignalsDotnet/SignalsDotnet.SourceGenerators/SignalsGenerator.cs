@@ -23,48 +23,50 @@ public class SignalsGenerator : IIncrementalGenerator
                                                                                               ct))
                                       .Where(static x => x is not null);
 
-        var signalMembers = context.SyntaxProvider
-                                   .ForAttributeWithMetadataName(Attributes.SignalAttributeName,
-                                                                 static (node, _) => node is PropertyDeclarationSyntax,
-                                                                 static (ctx, _) => (Type: ctx.TargetSymbol.ContainingType,
-                                                                                     ctx.SemanticModel.Compilation));
+        var signalMembers = ParseContainingType(context, Attributes.SignalAttributeName,
+                                                static node => node is PropertyDeclarationSyntax);
 
-        var computedMembers = context.SyntaxProvider
-                                     .ForAttributeWithMetadataName(Attributes.ComputedAttributeName,
-                                                                   static (node, _) => node is MethodDeclarationSyntax,
-                                                                   static (ctx, _) => (Type: ctx.TargetSymbol.ContainingType,
-                                                                                       ctx.SemanticModel.Compilation));
+        var computedMembers = ParseContainingType(context, Attributes.ComputedAttributeName,
+                                                  static node => node is MethodDeclarationSyntax);
 
-        var asyncComputedMembers = context.SyntaxProvider
-                                          .ForAttributeWithMetadataName(Attributes.AsyncComputedAttributeName,
-                                                                        static (node, _) => node is MethodDeclarationSyntax,
-                                                                        static (ctx, _) => (Type: ctx.TargetSymbol.ContainingType,
-                                                                                            ctx.SemanticModel.Compilation));
+        var asyncComputedMembers = ParseContainingType(context, Attributes.AsyncComputedAttributeName,
+                                                       static node => node is MethodDeclarationSyntax);
 
         var perMemberModels = signalMembers.Collect()
                                      .Combine(computedMembers.Collect())
                                      .Combine(asyncComputedMembers.Collect())
                                      .SelectMany(static (tuple, _) =>
-                                         tuple.Left.Left.Concat(tuple.Left.Right).Concat(tuple.Right).ToImmutableArray())
-                                     .Collect()
-                                     .SelectMany(static (candidates, _) =>
-                                         candidates.Where(static x => x.Type is not null
-                                                                      && !HasAttribute(x.Type, Attributes.GenerateSignalsAttributeName))
-                                                   .GroupBy(static x => x.Type, SymbolEqualityComparer.Default)
-                                                   .Select(static group => group.First())
-                                                   .ToImmutableArray())
-                                     .Select(static (candidate, ct) => Parse(candidate.Type,
-                                                                             candidate.Type.DeclaringSyntaxReferences
-                                                                                      .Select(static x => x.GetSyntax())
-                                                                                      .OfType<TypeDeclarationSyntax>()
-                                                                                      .FirstOrDefault(),
-                                                                             candidate.Compilation,
-                                                                             wholeClass: false,
-                                                                             ct))
-                                     .Where(static x => x is not null);
+                                         tuple.Left.Left.Concat(tuple.Left.Right).Concat(tuple.Right)
+                                              .Where(static x => x is not null)
+                                              .GroupBy(static x => x!.Model?.HintName ?? "")
+                                              .Select(static group => group.First())
+                                              .ToImmutableArray());
 
         context.RegisterSourceOutput(wholeClassModels, static (ctx, result) => Emit(ctx, result!));
         context.RegisterSourceOutput(perMemberModels, static (ctx, result) => Emit(ctx, result!));
+    }
+
+    static IncrementalValuesProvider<ParseResult?> ParseContainingType(IncrementalGeneratorInitializationContext context,
+                                                                       string attributeName,
+                                                                       Func<SyntaxNode, bool> nodeFilter)
+    {
+        return context.SyntaxProvider
+                      .ForAttributeWithMetadataName(attributeName,
+                                                    (node, _) => nodeFilter(node),
+                                                    (ctx, ct) =>
+                                                    {
+                                                        var type = ctx.TargetSymbol.ContainingType;
+                                                        if (type is null || HasAttribute(type, Attributes.GenerateSignalsAttributeName))
+                                                            return null;
+
+                                                        var syntax = type.DeclaringSyntaxReferences
+                                                                         .Select(x => x.GetSyntax(ct))
+                                                                         .OfType<TypeDeclarationSyntax>()
+                                                                         .FirstOrDefault();
+
+                                                        return Parse(type, syntax, ctx.SemanticModel.Compilation, wholeClass: false, ct);
+                                                    })
+                      .Where(static x => x is not null);
     }
 
     static void Emit(SourceProductionContext context, ParseResult result)
@@ -151,6 +153,24 @@ public class SignalsGenerator : IIncrementalGenerator
 
         if (properties.Count == 0 && computedProperties.Count == 0 && asyncComputedProperties.Count == 0)
             return new ParseResult(null, diagnostics.ToImmutableArray());
+
+        var userParameterlessConstructor = type.InstanceConstructors
+                                               .FirstOrDefault(static x => x.Parameters.Length == 0
+                                                                           && !x.IsImplicitlyDeclared
+                                                                           && !x.IsStatic);
+
+        if (userParameterlessConstructor is not null)
+        {
+            var location = userParameterlessConstructor.DeclaringSyntaxReferences
+                                                       .Select(static x => x.GetSyntax())
+                                                       .OfType<ConstructorDeclarationSyntax>()
+                                                       .Select(static x => x.Identifier.GetLocation())
+                                                       .FirstOrDefault()
+                           ?? classSyntax.Identifier.GetLocation();
+
+            diagnostics.Add(Diagnostic.Create(Diagnostics.UserParameterlessConstructorNotSupported, location, type.Name));
+            return new ParseResult(null, diagnostics.ToImmutableArray());
+        }
 
         var inpc = compilation.GetTypeByMetadataName("System.ComponentModel.INotifyPropertyChanged");
         var alreadyImplementsInpc = inpc is not null

@@ -68,7 +68,7 @@ readonly struct EquatableArray<T>(T[] items) : IEquatable<EquatableArray<T>>, IE
 
         for (var i = 0; i < items.Length; i++)
         {
-            if (!items[i].Equals(otherItems[i]))
+            if (!EqualityComparer<T>.Default.Equals(items[i], otherItems[i]))
                 return false;
         }
 

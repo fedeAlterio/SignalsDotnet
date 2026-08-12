@@ -136,15 +136,18 @@ internal sealed class ComputedObservable<T> : Observable<T>
 
             try
             {
+                T value;
                 try
                 {
-                    return new(await _observable._func(cancellationToken));
+                    value = await _observable._func(cancellationToken);
                 }
                 finally
                 {
                     signalRequestedSubscription.Dispose();
-                    DropStaleSignalSubscriptions();
                 }
+
+                DropStaleSignalSubscriptions();
+                return new(value);
             }
             catch (OperationCanceledException)
             {

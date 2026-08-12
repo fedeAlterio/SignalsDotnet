@@ -78,6 +78,10 @@ internal class FromObservableSignalRefCounted<T> : ISignal<T>, IEquatable<FromOb
    
     PropertyChangedEventHandler? _propertyChangedCore;
 
+    void AddRawHandler(PropertyChangedEventHandler handler) => _propertyChangedCore += handler;
+
+    void RemoveRawHandler(PropertyChangedEventHandler handler) => _propertyChangedCore -= handler;
+
     public T UntrackedValue => _value;
     object? IReadOnlySignal.UntrackedValue => UntrackedValue;
 
@@ -107,6 +111,9 @@ internal class FromObservableSignalRefCounted<T> : ISignal<T>, IEquatable<FromOb
         bool becameUnobserved;
         lock (_lock)
         {
+            if (_subscriberCount == 0)
+                return;
+
             becameUnobserved = --_subscriberCount == 0;
             if (becameUnobserved)
             {
@@ -161,12 +168,23 @@ internal class FromObservableSignalRefCounted<T> : ISignal<T>, IEquatable<FromOb
         // otherwise the upstream observable is never activated and the value never updates.
         add
         {
-            _propertyChangedCore += value;
+            if (value is null)
+                return;
+
+            AddRawHandler(value);
             OnSubscribe();
         }
         remove
         {
-            _propertyChangedCore -= value;
+            if (value is null)
+                return;
+
+            var before = _propertyChangedCore;
+            var after = before - value;
+            if (ReferenceEquals(before, after))
+                return;
+
+            _propertyChangedCore = after;
             OnUnsubscribe();
         }
     }
@@ -225,8 +243,8 @@ internal class FromObservableSignalRefCounted<T> : ISignal<T>, IEquatable<FromOb
             if (!futureChangesOnly)
                 observer.OnNext(signal.Value);
 
-            signal._propertyChangedCore += OnPropertyChanged;
-            return new UnsubscribeDisposable(() => signal._propertyChangedCore -= OnPropertyChanged);
+            signal.AddRawHandler(OnPropertyChanged);
+            return new UnsubscribeDisposable(() => signal.RemoveRawHandler(OnPropertyChanged));
         }
     }
 
@@ -239,8 +257,8 @@ internal class FromObservableSignalRefCounted<T> : ISignal<T>, IEquatable<FromOb
             if (!futureChangesOnly)
                 observer.OnNext(Unit.Default);
 
-            signal._propertyChangedCore += OnPropertyChanged;
-            return new UnsubscribeDisposable(() => signal._propertyChangedCore -= OnPropertyChanged);
+            signal.AddRawHandler(OnPropertyChanged);
+            return new UnsubscribeDisposable(() => signal.RemoveRawHandler(OnPropertyChanged));
         }
     }
 

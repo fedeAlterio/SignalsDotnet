@@ -833,12 +833,12 @@ await SomeAsyncOperation(cancellationSignal.Value);
 
 `SubscriptionStrategy` controls how long a computed or observable-backed signal stays subscribed to its source:
 
-- **`RefCount`** (default for computed signals) — subscribes while at least one observer is listening to `Values`/`FutureValues`, and unsubscribes when the last one goes away. An unobserved signal costs nothing, and a re-observed one starts up again. This propagates: when a ref-counted computed goes idle it releases its dependencies, so a whole derived graph can wind down behind a closed view.
-- **`Persistent`** (default for observable-backed signals) — subscribes once on first value access and keeps that subscription for the signal's lifetime. Pick it when the signal must not miss anything while unobserved, or when re-subscribing to the source is expensive.
+- **`Persistent`** (default) — subscribes once on first value access and keeps that subscription for the signal's lifetime. Pick it when the signal must not miss anything while unobserved, or when re-subscribing to the source is expensive.
+- **`RefCount`** (opt-in) — subscribes while at least one observer is listening to `Values`/`FutureValues`, and unsubscribes when the last one goes away. An unobserved signal costs nothing, and a re-observed one starts up again. This propagates: when a ref-counted computed goes idle it releases its dependencies, so a whole derived graph can wind down behind a closed view.
 
 ```c#
 var signal = Signal.Computed(() => a.Value + b.Value,
-                             config => config with { SubscriptionStrategy = SubscriptionStrategy.Persistent });
+                             config => config with { SubscriptionStrategy = SubscriptionStrategy.RefCount });
 
 var ticking = Observable.Interval(TimeSpan.FromSeconds(1))
                         .ToSignal(config => config with { SubscriptionStrategy = SubscriptionStrategy.RefCount });
@@ -849,7 +849,7 @@ Defaults can be changed globally:
 ```c#
 ReadonlySignalConfiguration.Default = ReadonlySignalConfiguration.Default with
 {
-    SubscriptionStrategy = SubscriptionStrategy.Persistent
+    SubscriptionStrategy = SubscriptionStrategy.RefCount
 };
 ```
 
