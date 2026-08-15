@@ -32,6 +32,16 @@ sealed record AsyncComputedPropertyModel(
     string ConcurrentChangeStrategy,
     bool ReturnsTask);
 
+sealed record EffectMemberModel(
+    string MethodName,
+    string FieldName);
+
+sealed record AsyncEffectMemberModel(
+    string MethodName,
+    string FieldName,
+    string ConcurrentChangeStrategy,
+    bool ReturnsTask);
+
 sealed record TypeDeclarationModel(string Keyword, string Name, string Constraints);
 
 sealed record SignalClassModel(
@@ -40,13 +50,17 @@ sealed record SignalClassModel(
     EquatableArray<SignalPropertyModel> Properties,
     EquatableArray<ComputedPropertyModel> ComputedProperties,
     EquatableArray<AsyncComputedPropertyModel> AsyncComputedProperties,
+    EquatableArray<EffectMemberModel> Effects,
+    EquatableArray<AsyncEffectMemberModel> AsyncEffects,
     bool NotifyPropertyChangedRequested,
     bool AlreadyImplementsINotifyPropertyChanged,
     bool EmitModelChanged,
     bool SystemTextJsonAvailable,
     bool IsRecord,
     bool IsRecordStruct,
+    bool IsStruct,
     bool IsSealed,
+    bool GenerateConstructor,
     string ClassName,
     string HintName);
 

@@ -7,6 +7,8 @@ static class Attributes
     public const string SignalAttributeName = "SignalsDotnet.SignalAttribute";
     public const string ComputedAttributeName = "SignalsDotnet.ComputedAttribute";
     public const string AsyncComputedAttributeName = "SignalsDotnet.AsyncComputedAttribute";
+    public const string EffectAttributeName = "SignalsDotnet.EffectAttribute";
+    public const string AsyncEffectAttributeName = "SignalsDotnet.AsyncEffectAttribute";
     public const string GenerateNotifyPropertyChangedAttributeName = "SignalsDotnet.GenerateNotifyPropertyChangedAttribute";
 
     public const string Source = """
@@ -80,6 +82,32 @@ static class Attributes
             {
                 /// <summary>
                 /// How a change arriving while a computation is still running is handled.
+                /// </summary>
+                public global::SignalsDotnet.ConcurrentChangeStrategy ConcurrentChangeStrategy { get; set; }
+            }
+
+            /// <summary>
+            /// Marks a parameterless void instance method as the body of an <see cref="global::SignalsDotnet.Effect"/>.
+            /// The generator creates the effect in the constructor and re-runs the method whenever a signal it
+            /// reads changes.
+            /// </summary>
+            [global::System.AttributeUsage(global::System.AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
+            [global::System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
+            internal sealed class EffectAttribute : global::System.Attribute
+            {
+            }
+
+            /// <summary>
+            /// Marks a method taking a <see cref="global::System.Threading.CancellationToken"/> and returning a
+            /// <see cref="global::System.Threading.Tasks.ValueTask"/> or <see cref="global::System.Threading.Tasks.Task"/>
+            /// as the body of an asynchronous <see cref="global::SignalsDotnet.Effect"/>.
+            /// </summary>
+            [global::System.AttributeUsage(global::System.AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
+            [global::System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
+            internal sealed class AsyncEffectAttribute : global::System.Attribute
+            {
+                /// <summary>
+                /// How a change arriving while the effect is still running is handled.
                 /// </summary>
                 public global::SignalsDotnet.ConcurrentChangeStrategy ConcurrentChangeStrategy { get; set; }
             }

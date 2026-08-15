@@ -75,6 +75,8 @@ Console.WriteLine(fullName.Value); // Grace Lovelace
 - [Core Concepts](#core-concepts)
 - [Source Generator](#source-generator)
   - [Computed and Async Properties](#computed-and-async-properties)
+  - [Generated Effects](#generated-effects)
+  - [Constructors](#constructors)
   - [ModelChanged](#modelchanged)
   - [Records](#records)
   - [Serialization](#serialization)
@@ -98,6 +100,7 @@ Console.WriteLine(fullName.Value); // Grace Lovelace
   - [Custom Schedulers](#custom-schedulers)
 - [Advanced Features](#advanced-features)
   - [Untracked](#untracked)
+  - [InsideComputed](#insidecomputed)
   - [Signal Events](#signal-events)
   - [WhenAnyChanged](#whenanychanged)
   - [CancellationSignal](#cancellationsignal)
@@ -204,7 +207,51 @@ That yields:
 
 Other attributes: `[Signal]` backs a single property without annotating the class, and `[SignalIgnore]` excludes one.
 
-Implement `partial void OnInitialized()` to run logic after the generated signals are ready.
+### Generated Effects
+
+A method marked `[Effect]` becomes an [effect](#effects) created for you: it runs once when the instance is constructed and re-runs whenever a signal it read changes. The effect is held for the lifetime of the instance in a private field, so nothing extra is exposed on the type. `[AsyncEffect]` does the same for a method taking a `CancellationToken` and returning `ValueTask` or `Task`:
+
+```c#
+[GenerateSignals]
+public partial class SearchViewModel
+{
+    public partial string Term { get; set; }
+
+    [Effect]
+    void LogTerm() => Logger.LogInformation("Searching {Term}", Term);
+
+    [AsyncEffect(ConcurrentChangeStrategy = ConcurrentChangeStrategy.CancelCurrent)]
+    async ValueTask Search(CancellationToken token)
+    {
+        Results = await SearchAsync(Term, token);
+    }
+}
+```
+
+`[Effect]` requires a parameterless, non-static `void` method (`SIG014`–`SIG016`); `[AsyncEffect]` requires a non-static method taking exactly one `CancellationToken` and returning `ValueTask` or `Task` (`SIG017`). `ConcurrentChangeStrategy` defaults to `ScheduleNext` — see [ConcurrentChangeStrategy](#concurrentchangestrategy).
+
+### Constructors
+
+If you declare no constructor, the generator emits a parameterless one that initializes the signals. As soon as you declare your own constructors, the generator emits none, and each of yours must either call the generated `InitializeSignals()` or chain to another constructor with `: this(...)`; otherwise it reports `SIG013`. Call it before touching any generated member:
+
+```c#
+[GenerateSignals]
+public partial class Person
+{
+    public partial string Name { get; set; }
+
+    [Computed]
+    string ComputeShout() => Name.ToUpperInvariant();
+
+    public Person(string name)
+    {
+        InitializeSignals();
+        Name = name;
+    }
+}
+```
+
+`InitializeSignals()` is `protected` on classes (`private` on structs), and it is generated even for a type with no signal members, so a constructor can call it unconditionally.
 
 ### ModelChanged
 
@@ -774,6 +821,10 @@ public class LoginViewModel
    public IReadOnlySignal<bool> CanLogin { get; }
 }
 ```
+
+### InsideComputed
+
+`Signal.InsideComputed` tells you whether a computation is currently collecting dependencies. Custom reactive sources can use it to skip building tracking state for reads that nothing is observing:
 
 ### Signal Events
 

@@ -324,7 +324,7 @@ public class GeneratedSignalsTests
     }
 
     [Fact(Timeout = TestTimeoutMs)]
-    public async Task OnInitialized_runs_after_the_signals_are_ready()
+    public async Task Custom_constructor_can_call_InitializeSignals_and_use_signals_immediately_after()
     {
         await this.SwitchToMainThread();
         var model = new WithInitializationHook();
@@ -332,6 +332,60 @@ public class GeneratedSignalsTests
         model.Name.Should().Be("from hook");
         model.ShoutAtInitialization.Should().Be("FROM HOOK");
         model.Shout.Should().Be("FROM HOOK");
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Parameterized_constructor_can_call_InitializeSignals()
+    {
+        await this.SwitchToMainThread();
+        var model = new WithParameterizedConstructor("ada");
+
+        model.Name.Should().Be("ada");
+        model.Shout.Should().Be("ADA");
+
+        model.Name = "grace";
+        model.Shout.Should().Be("GRACE");
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Constructor_chaining_with_this_initializes_the_signals()
+    {
+        await this.SwitchToMainThread();
+        var model = new WithChainedConstructor(0);
+
+        model.Name.Should().Be("chained");
+        model.Shout.Should().Be("CHAINED");
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Parameterized_constructor_only_does_not_get_a_generated_parameterless_one()
+    {
+        await this.SwitchToMainThread();
+
+        typeof(WithParameterizedConstructor).GetConstructor(global::System.Type.EmptyTypes)
+                                            .Should().BeNull();
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task InitializeSignals_is_generated_even_without_any_signal_member()
+    {
+        await this.SwitchToMainThread();
+
+        typeof(WithoutAnySignalMember).GetMethod("InitializeSignals",
+                                                 BindingFlags.Instance | BindingFlags.NonPublic)
+                                      .Should().NotBeNull();
+
+        var model = new WithoutAnySignalMember();
+        model.Should().NotBeNull();
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Constructor_can_call_InitializeSignals_without_any_signal_member()
+    {
+        await this.SwitchToMainThread();
+        var model = new WithoutSignalsButWithConstructor("ada");
+
+        model.Marker.Should().Be("ada");
     }
 
     [Fact(Timeout = TestTimeoutMs)]
@@ -705,5 +759,58 @@ public class GeneratedSignalsTests
         person.Name = "Grace";
 
         await TestHelpers.WaitUntil(() => seen.Contains("Grace"));
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task EffectAttribute_runs_once_at_construction()
+    {
+        await this.SwitchToMainThread();
+        var model = new WithEffect { Value = 5 };
+
+        await TestHelpers.WaitUntil(() => model.LastSeen == 5);
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task EffectAttribute_reruns_when_a_dependency_changes()
+    {
+        await this.SwitchToMainThread();
+        var model = new WithEffect { Value = 1 };
+
+        await TestHelpers.WaitUntil(() => model.LastSeen == 1);
+
+        model.Value = 2;
+
+        await TestHelpers.WaitUntil(() => model.LastSeen == 2);
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task EffectAttribute_does_not_generate_a_public_member()
+    {
+        await this.SwitchToMainThread();
+
+        typeof(WithEffect).GetProperty("TrackValue").Should().BeNull();
+        typeof(WithEffect).GetProperty("TrackValueEffect").Should().BeNull();
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task AsyncEffectAttribute_reruns_when_a_dependency_changes()
+    {
+        await this.SwitchToMainThread();
+        var model = new WithAsyncEffect { Value = 1 };
+
+        await TestHelpers.WaitUntil(() => model.LastSeen == 1);
+
+        model.Value = 2;
+
+        await TestHelpers.WaitUntil(() => model.LastSeen == 2);
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task AsyncEffectAttribute_supports_Task_returning_methods()
+    {
+        await this.SwitchToMainThread();
+        var model = new WithAsyncEffectTask { Value = 7 };
+
+        await TestHelpers.WaitUntil(() => model.LastSeen == 7);
     }
 }

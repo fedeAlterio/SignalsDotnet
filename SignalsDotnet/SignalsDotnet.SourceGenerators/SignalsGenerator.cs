@@ -32,11 +32,22 @@ public class SignalsGenerator : IIncrementalGenerator
         var asyncComputedMembers = ParseContainingType(context, Attributes.AsyncComputedAttributeName,
                                                        static node => node is MethodDeclarationSyntax);
 
+        var effectMembers = ParseContainingType(context, Attributes.EffectAttributeName,
+                                                 static node => node is MethodDeclarationSyntax);
+
+        var asyncEffectMembers = ParseContainingType(context, Attributes.AsyncEffectAttributeName,
+                                                      static node => node is MethodDeclarationSyntax);
+
         var perMemberModels = signalMembers.Collect()
                                      .Combine(computedMembers.Collect())
                                      .Combine(asyncComputedMembers.Collect())
+                                     .Combine(effectMembers.Collect())
+                                     .Combine(asyncEffectMembers.Collect())
                                      .SelectMany(static (tuple, _) =>
-                                         tuple.Left.Left.Concat(tuple.Left.Right).Concat(tuple.Right)
+                                         tuple.Left.Left.Left.Left.Concat(tuple.Left.Left.Left.Right)
+                                              .Concat(tuple.Left.Left.Right)
+                                              .Concat(tuple.Left.Right)
+                                              .Concat(tuple.Right)
                                               .Where(static x => x is not null)
                                               .GroupBy(static x => x!.Model?.HintName ?? "")
                                               .Select(static group => group.First())
@@ -115,6 +126,8 @@ public class SignalsGenerator : IIncrementalGenerator
         var properties = new List<SignalPropertyModel>();
         var computedProperties = new List<ComputedPropertyModel>();
         var asyncComputedProperties = new List<AsyncComputedPropertyModel>();
+        var effects = new List<EffectMemberModel>();
+        var asyncEffects = new List<AsyncEffectMemberModel>();
         foreach (var member in type.GetMembers())
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -148,29 +161,65 @@ public class SignalsGenerator : IIncrementalGenerator
                 var model = ParseAsyncComputedMethod(method, compilation, diagnostics);
                 if (model is not null)
                     asyncComputedProperties.Add(model);
+
+                continue;
+            }
+
+            if (HasAttribute(method, Attributes.EffectAttributeName))
+            {
+                var model = ParseEffectMethod(method, diagnostics);
+                if (model is not null)
+                    effects.Add(model);
+
+                continue;
+            }
+
+            if (HasAttribute(method, Attributes.AsyncEffectAttributeName))
+            {
+                var model = ParseAsyncEffectMethod(method, compilation, diagnostics);
+                if (model is not null)
+                    asyncEffects.Add(model);
             }
         }
 
-        if (properties.Count == 0 && computedProperties.Count == 0 && asyncComputedProperties.Count == 0)
-            return new ParseResult(null, diagnostics.ToImmutableArray());
-
-        var userParameterlessConstructor = type.InstanceConstructors
-                                               .FirstOrDefault(static x => x.Parameters.Length == 0
-                                                                           && !x.IsImplicitlyDeclared
-                                                                           && !x.IsStatic);
-
-        if (userParameterlessConstructor is not null)
+        if (!wholeClass
+            && properties.Count == 0
+            && computedProperties.Count == 0
+            && asyncComputedProperties.Count == 0
+            && effects.Count == 0
+            && asyncEffects.Count == 0)
         {
-            var location = userParameterlessConstructor.DeclaringSyntaxReferences
-                                                       .Select(static x => x.GetSyntax())
-                                                       .OfType<ConstructorDeclarationSyntax>()
-                                                       .Select(static x => x.Identifier.GetLocation())
-                                                       .FirstOrDefault()
-                           ?? classSyntax.Identifier.GetLocation();
-
-            diagnostics.Add(Diagnostic.Create(Diagnostics.UserParameterlessConstructorNotSupported, location, type.Name));
             return new ParseResult(null, diagnostics.ToImmutableArray());
         }
+
+        var userConstructors = type.InstanceConstructors
+                                   .Where(static x => !x.IsImplicitlyDeclared && !x.IsStatic)
+                                   .ToArray();
+
+        var generateConstructor = userConstructors.Length == 0;
+
+        var invalidConstructor = false;
+        foreach (var constructor in userConstructors)
+        {
+            var constructorSyntax = constructor.DeclaringSyntaxReferences
+                                               .Select(static x => x.GetSyntax())
+                                               .OfType<ConstructorDeclarationSyntax>()
+                                               .FirstOrDefault();
+
+            if (constructorSyntax is not null
+                && (CallsInitializeSignals(constructorSyntax) || ChainsToAnotherConstructor(constructorSyntax)))
+            {
+                continue;
+            }
+
+            var location = constructorSyntax?.Identifier.GetLocation() ?? classSyntax.Identifier.GetLocation();
+
+            diagnostics.Add(Diagnostic.Create(Diagnostics.ConstructorMustCallInitializeSignals, location, type.Name));
+            invalidConstructor = true;
+        }
+
+        if (invalidConstructor)
+            return new ParseResult(null, diagnostics.ToImmutableArray());
 
         var inpc = compilation.GetTypeByMetadataName("System.ComponentModel.INotifyPropertyChanged");
         var alreadyImplementsInpc = inpc is not null
@@ -192,13 +241,17 @@ public class SignalsGenerator : IIncrementalGenerator
                                           new EquatableArray<SignalPropertyModel>([.. properties]),
                                           new EquatableArray<ComputedPropertyModel>([.. computedProperties]),
                                           new EquatableArray<AsyncComputedPropertyModel>([.. asyncComputedProperties]),
+                                          new EquatableArray<EffectMemberModel>([.. effects]),
+                                          new EquatableArray<AsyncEffectMemberModel>([.. asyncEffects]),
                                           notifyRequested,
                                           alreadyImplementsInpc,
                                           emitModelChanged,
                                           systemTextJsonAvailable,
                                           type.IsRecord,
                                           type.IsRecord && type.TypeKind == TypeKind.Struct,
+                                          type.TypeKind == TypeKind.Struct,
                                           type.IsSealed,
+                                          generateConstructor,
                                           type.Name,
                                           BuildHintName(type));
 
@@ -450,6 +503,91 @@ public class SignalsGenerator : IIncrementalGenerator
                                               isTask);
     }
 
+    static EffectMemberModel? ParseEffectMethod(IMethodSymbol method, List<Diagnostic> diagnostics)
+    {
+        var syntax = method.DeclaringSyntaxReferences
+                           .Select(static x => x.GetSyntax())
+                           .OfType<MethodDeclarationSyntax>()
+                           .FirstOrDefault();
+
+        if (syntax is null)
+            return null;
+
+        if (method.Parameters.Length != 0)
+        {
+            diagnostics.Add(Diagnostic.Create(Diagnostics.EffectMethodMustBeParameterless, syntax.Identifier.GetLocation(), method.Name));
+            return null;
+        }
+
+        if (!method.ReturnsVoid)
+        {
+            diagnostics.Add(Diagnostic.Create(Diagnostics.EffectMethodMustReturnVoid, syntax.Identifier.GetLocation(), method.Name));
+            return null;
+        }
+
+        if (method.IsStatic)
+        {
+            diagnostics.Add(Diagnostic.Create(Diagnostics.EffectMethodMustBeInstance, syntax.Identifier.GetLocation(), method.Name));
+            return null;
+        }
+
+        return new EffectMemberModel(method.Name, $"_{Camelize(method.Name)}Effect");
+    }
+
+    static AsyncEffectMemberModel? ParseAsyncEffectMethod(IMethodSymbol method, Compilation compilation, List<Diagnostic> diagnostics)
+    {
+        var syntax = method.DeclaringSyntaxReferences
+                           .Select(static x => x.GetSyntax())
+                           .OfType<MethodDeclarationSyntax>()
+                           .FirstOrDefault();
+
+        if (syntax is null)
+            return null;
+
+        if (method.IsStatic)
+        {
+            diagnostics.Add(Diagnostic.Create(Diagnostics.EffectMethodMustBeInstance, syntax.Identifier.GetLocation(), method.Name));
+            return null;
+        }
+
+        var cancellationToken = compilation.GetTypeByMetadataName("System.Threading.CancellationToken");
+        if (method.Parameters.Length != 1
+            || cancellationToken is null
+            || !SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, cancellationToken))
+        {
+            diagnostics.Add(Diagnostic.Create(Diagnostics.AsyncEffectMethodSignature, syntax.Identifier.GetLocation(), method.Name));
+            return null;
+        }
+
+        var valueTask = compilation.GetTypeByMetadataName("System.Threading.Tasks.ValueTask");
+        var task = compilation.GetTypeByMetadataName("System.Threading.Tasks.Task");
+
+        var isValueTask = valueTask is not null && SymbolEqualityComparer.Default.Equals(method.ReturnType, valueTask);
+        var isTask = task is not null && SymbolEqualityComparer.Default.Equals(method.ReturnType, task);
+
+        if (!isValueTask && !isTask)
+        {
+            diagnostics.Add(Diagnostic.Create(Diagnostics.AsyncEffectMethodSignature, syntax.Identifier.GetLocation(), method.Name));
+            return null;
+        }
+
+        var attribute = method.GetAttributes()
+                              .First(x => x.AttributeClass?.ToDisplayString() == Attributes.AsyncEffectAttributeName);
+
+        var strategy = "global::SignalsDotnet.ConcurrentChangeStrategy.ScheduleNext";
+        foreach (var argument in attribute.NamedArguments)
+        {
+            if (argument.Key != "ConcurrentChangeStrategy" || argument.Value.Value is not int value)
+                continue;
+
+            strategy = value == 1
+                ? "global::SignalsDotnet.ConcurrentChangeStrategy.CancelCurrent"
+                : "global::SignalsDotnet.ConcurrentChangeStrategy.ScheduleNext";
+        }
+
+        return new AsyncEffectMemberModel(method.Name, $"_{Camelize(method.Name)}Effect", strategy, isTask);
+    }
+
     static List<TypeDeclarationModel>? BuildHierarchy(INamedTypeSymbol type, TypeDeclarationSyntax syntax, List<Diagnostic> diagnostics)
     {
         var hierarchy = new List<TypeDeclarationModel>
@@ -555,6 +693,26 @@ public class SignalsGenerator : IIncrementalGenerator
 
     static bool HasAttribute(ISymbol symbol, string metadataName) =>
         symbol.GetAttributes().Any(x => x.AttributeClass?.ToDisplayString() == metadataName);
+
+    static bool CallsInitializeSignals(ConstructorDeclarationSyntax constructor)
+    {
+        var body = (SyntaxNode?)constructor.Body ?? constructor.ExpressionBody;
+        if (body is null)
+            return false;
+
+        return body.DescendantNodesAndSelf()
+                   .OfType<InvocationExpressionSyntax>()
+                   .Any(static x => x.Expression switch
+                   {
+                       IdentifierNameSyntax id => id.Identifier.Text == "InitializeSignals",
+                       MemberAccessExpressionSyntax member => member.Name.Identifier.Text == "InitializeSignals",
+                       _ => false
+                   });
+    }
+
+    static bool ChainsToAnotherConstructor(ConstructorDeclarationSyntax constructor)
+        => constructor.Initializer is { } initializer
+           && initializer.IsKind(SyntaxKind.ThisConstructorInitializer);
 
     static string AccessibilityToString(Accessibility accessibility) => accessibility switch
     {
