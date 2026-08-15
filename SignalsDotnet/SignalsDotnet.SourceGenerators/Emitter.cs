@@ -8,6 +8,7 @@ static class Emitter
     const string ReadOnlySignalType = "global::SignalsDotnet.IReadOnlySignal";
     const string NotifySignalChangedType = "global::SignalsDotnet.INotifySignalChanged";
     const string AsyncReadOnlySignalType = "global::SignalsDotnet.IAsyncReadOnlySignal";
+    const string EffectType = "global::SignalsDotnet.Effect";
 
     public const string ModelChangedPropertyName = "ModelChanged";
     const string ModelChangedFieldName = "_modelChangedSignal";
@@ -93,10 +94,31 @@ static class Emitter
             EmitAsyncComputedProperty(builder, asyncComputedProperties[i], model.SystemTextJsonAvailable);
         }
 
+        var effects = model.Effects.Items;
+        for (var i = 0; i < effects.Length; i++)
+        {
+            if (i > 0 || properties.Length > 0 || computedProperties.Length > 0 || asyncComputedProperties.Length > 0)
+                builder.AppendLine();
+
+            EmitEffectField(builder, effects[i].FieldName, effects[i].MethodName);
+        }
+
+        var asyncEffects = model.AsyncEffects.Items;
+        for (var i = 0; i < asyncEffects.Length; i++)
+        {
+            if (i > 0 || properties.Length > 0 || computedProperties.Length > 0 || asyncComputedProperties.Length > 0 || effects.Length > 0)
+                builder.AppendLine();
+
+            EmitEffectField(builder, asyncEffects[i].FieldName, asyncEffects[i].MethodName);
+        }
+
         if (model.EmitModelChanged)
         {
-            if (properties.Length > 0 || computedProperties.Length > 0 || asyncComputedProperties.Length > 0)
+            if (properties.Length > 0 || computedProperties.Length > 0 || asyncComputedProperties.Length > 0
+                || effects.Length > 0 || asyncEffects.Length > 0)
+            {
                 builder.AppendLine();
+            }
 
             EmitModelChanged(builder, properties, model.Hierarchy.Items[model.Hierarchy.Items.Length - 1].Name, model.SystemTextJsonAvailable);
         }
@@ -109,18 +131,22 @@ static class Emitter
                         .ToArray()
             : [];
 
-        builder.AppendLine();
-        builder.AppendLine($"public {model.ClassName}()");
-        builder.OpenBrace();
-        builder.AppendLine("InitializeSignals();");
-        builder.AppendLine("OnInitialized();");
-        builder.CloseBrace();
+        if (model.GenerateConstructor)
+        {
+            builder.AppendLine();
+            builder.AppendLine($"public {model.ClassName}()");
+            builder.OpenBrace();
+            builder.AppendLine("InitializeSignals();");
+            builder.CloseBrace();
+        }
 
         builder.AppendLine();
 
         var initializedFields = properties.Select(static x => x.FieldName)
                                           .Concat(computedProperties.Select(static x => x.FieldName))
                                           .Concat(asyncComputedProperties.Select(static x => x.FieldName))
+                                          .Concat(effects.Select(static x => x.FieldName))
+                                          .Concat(asyncEffects.Select(static x => x.FieldName))
                                           .Concat(model.EmitModelChanged ? [ModelChangedFieldName] : Array.Empty<string>())
                                           .ToArray();
 
@@ -130,7 +156,8 @@ static class Emitter
             builder.AppendLine($"[global::System.Diagnostics.CodeAnalysis.MemberNotNull({names})]");
         }
 
-        builder.AppendLine("private void InitializeSignals()");
+        var initializeSignalsAccessibility = model.IsStruct ? "private" : "protected";
+        builder.AppendLine($"{initializeSignalsAccessibility} void InitializeSignals()");
         builder.OpenBrace();
 
         foreach (var property in properties)
@@ -156,9 +183,29 @@ static class Emitter
             builder.AppendLine($"{computed.FieldName} = {SignalType}.AsyncComputed<{computed.TypeName}>({func}, default!, {computed.ConcurrentChangeStrategy});");
         }
 
-        if (model.EmitModelChanged)
+        if (effects.Length > 0 || asyncEffects.Length > 0)
         {
             if (computedProperties.Length > 0 || asyncComputedProperties.Length > 0)
+                builder.AppendLine();
+
+            foreach (var effect in effects)
+            {
+                builder.AppendLine($"{effect.FieldName} = {EffectType}.Create({effect.MethodName});");
+            }
+
+            foreach (var effect in asyncEffects)
+            {
+                var func = effect.ReturnsTask
+                    ? $"async (global::System.Threading.CancellationToken token) => await {effect.MethodName}(token)"
+                    : effect.MethodName;
+
+                builder.AppendLine($"{effect.FieldName} = {EffectType}.Create({func}, {effect.ConcurrentChangeStrategy});");
+            }
+        }
+
+        if (model.EmitModelChanged)
+        {
+            if (computedProperties.Length > 0 || asyncComputedProperties.Length > 0 || effects.Length > 0 || asyncEffects.Length > 0)
                 builder.AppendLine();
 
             var modelTypeName = model.Hierarchy.Items[model.Hierarchy.Items.Length - 1].Name;
@@ -175,8 +222,12 @@ static class Emitter
             builder.CloseBrace(", config => config with { RaiseOnlyWhenChanged = false });");
         }
 
-        if (notified.Length > 0 && (computedProperties.Length > 0 || asyncComputedProperties.Length > 0 || model.EmitModelChanged))
+        if (notified.Length > 0
+            && (computedProperties.Length > 0 || asyncComputedProperties.Length > 0
+                || effects.Length > 0 || asyncEffects.Length > 0 || model.EmitModelChanged))
+        {
             builder.AppendLine();
+        }
 
         foreach (var (name, field) in notified)
         {
@@ -184,10 +235,6 @@ static class Emitter
         }
 
         builder.CloseBrace();
-        builder.AppendLine();
-
-        builder.AppendLine("/// <summary>Called once the generated signals are initialized. Implement it to run your own construction logic.</summary>");
-        builder.AppendLine("partial void OnInitialized();");
 
         if (model.IsRecord)
             EmitRecordMembers(builder, model, properties);
@@ -386,6 +433,12 @@ static class Emitter
         builder.AppendLine($"/// <summary>Computed from <see cref=\"{property.MethodName}\"/>.</summary>");
         EmitIgnoreOnSerialization(builder, systemTextJsonAvailable);
         builder.AppendLine($"{property.Accessibility} {property.TypeName} {property.Name} => {property.FieldName}.Value;");
+    }
+
+    static void EmitEffectField(IndentedBuilder builder, string fieldName, string methodName)
+    {
+        builder.AppendLine($"/// <summary>Keeps <see cref=\"{methodName}\"/> running as an effect for the lifetime of this instance.</summary>");
+        builder.AppendLine($"private {EffectType} {fieldName} = null!;");
     }
 
     static void EmitComputedProperty(IndentedBuilder builder, ComputedPropertyModel property, bool systemTextJsonAvailable)

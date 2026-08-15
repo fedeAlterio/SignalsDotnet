@@ -39,10 +39,45 @@ public partial class WithInitializationHook
     [Computed]
     string ComputeShout() => Name.ToUpperInvariant();
 
-    partial void OnInitialized()
+    public WithInitializationHook()
     {
+        InitializeSignals();
         Name = "from hook";
         ShoutAtInitialization = Shout;
+    }
+}
+
+[GenerateSignals]
+public partial class WithParameterizedConstructor
+{
+    public partial string Name { get; set; }
+
+    [Computed]
+    string ComputeShout() => Name.ToUpperInvariant();
+
+    public WithParameterizedConstructor(string name)
+    {
+        InitializeSignals();
+        Name = name;
+    }
+}
+
+[GenerateSignals]
+public partial class WithChainedConstructor
+{
+    public partial string Name { get; set; }
+
+    [Computed]
+    string ComputeShout() => Name.ToUpperInvariant();
+
+    public WithChainedConstructor()
+    {
+        InitializeSignals();
+        Name = "chained";
+    }
+
+    public WithChainedConstructor(int _) : this()
+    {
     }
 }
 
@@ -160,6 +195,61 @@ public partial class OnlyComputed
 }
 
 [GenerateSignals]
+public partial class WithEffect
+{
+    public partial int Value { get; set; }
+
+    [SignalIgnore]
+    public int LastSeen { get; private set; } = -1;
+
+    [SignalIgnore]
+    public int RunCount { get; private set; }
+
+    [Effect]
+    void TrackValue()
+    {
+        LastSeen = Value;
+        RunCount++;
+    }
+}
+
+[GenerateSignals]
+public partial class WithAsyncEffect
+{
+    public partial int Value { get; set; }
+
+    [SignalIgnore]
+    public int LastSeen { get; private set; } = -1;
+
+    [SignalIgnore]
+    public int RunCount { get; private set; }
+
+    [AsyncEffect]
+    async ValueTask TrackValue(CancellationToken token)
+    {
+        await Task.Yield();
+        LastSeen = Value;
+        RunCount++;
+    }
+}
+
+[GenerateSignals]
+public partial class WithAsyncEffectTask
+{
+    public partial int Value { get; set; }
+
+    [SignalIgnore]
+    public int LastSeen { get; private set; } = -1;
+
+    [AsyncEffect(ConcurrentChangeStrategy = ConcurrentChangeStrategy.CancelCurrent)]
+    async Task TrackValue(CancellationToken token)
+    {
+        await Task.Yield();
+        LastSeen = Value;
+    }
+}
+
+[GenerateSignals]
 [GenerateNotifyPropertyChanged]
 public partial record PersonRecord
 {
@@ -182,5 +272,23 @@ public partial record Container
     public partial record NestedRecord
     {
         public partial string Name { get; set; }
+    }
+}
+
+[GenerateSignals]
+public partial class WithoutAnySignalMember
+{
+}
+
+[GenerateSignals]
+public partial class WithoutSignalsButWithConstructor
+{
+    [SignalIgnore]
+    public string Marker { get; }
+
+    public WithoutSignalsButWithConstructor(string marker)
+    {
+        InitializeSignals();
+        Marker = marker;
     }
 }

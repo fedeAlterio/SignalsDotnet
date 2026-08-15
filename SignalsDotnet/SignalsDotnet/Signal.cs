@@ -43,7 +43,11 @@ public static partial class Signal
         return new UntrackedReleaserDisposable(current);
     }
 
-    internal static bool InsideComputed => _currentScope.Value is not null;
+    /// <summary>
+    /// Whether a computation is currently collecting dependencies. Lets external reactive
+    /// sources skip creating tracking state for reads that nothing is observing.
+    /// </summary>
+    public static bool InsideComputed => _currentScope.Value is not null;
 
     public static async Task<T> Untracked<T>(Func<Task<T>> action)
     {

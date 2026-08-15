@@ -92,10 +92,10 @@ static class Diagnostics
         DiagnosticSeverity.Error,
         true);
 
-    public static readonly DiagnosticDescriptor UserParameterlessConstructorNotSupported = new(
+    public static readonly DiagnosticDescriptor ConstructorMustCallInitializeSignals = new(
         "SIG013",
-        "Type must not declare a parameterless constructor",
-        "Type '{0}' declares a parameterless constructor, which conflicts with the generated one that initializes the signals. Remove it and put your initialization logic in a partial method 'void OnInitialized()', which the generated constructor calls.",
+        "Constructor must call InitializeSignals",
+        "Type '{0}' declares a constructor that neither calls the generated 'InitializeSignals()' nor chains to another constructor with ': this(...)'. Call 'InitializeSignals()' before using any generated member.",
         "SignalsDotnet",
         DiagnosticSeverity.Error,
         true);
@@ -104,6 +104,38 @@ static class Diagnostics
         "SIG005",
         "Ref like types are not supported",
         "Property '{0}' has a ref struct type and cannot be backed by a signal",
+        "SignalsDotnet",
+        DiagnosticSeverity.Error,
+        true);
+
+    public static readonly DiagnosticDescriptor EffectMethodMustBeParameterless = new(
+        "SIG014",
+        "Effect method must be parameterless",
+        "Method '{0}' is marked with [Effect] but declares parameters",
+        "SignalsDotnet",
+        DiagnosticSeverity.Error,
+        true);
+
+    public static readonly DiagnosticDescriptor EffectMethodMustReturnVoid = new(
+        "SIG015",
+        "Effect method must return void",
+        "Method '{0}' is marked with [Effect] but returns a value. Use [AsyncEffect] for a method returning ValueTask or Task.",
+        "SignalsDotnet",
+        DiagnosticSeverity.Error,
+        true);
+
+    public static readonly DiagnosticDescriptor EffectMethodMustBeInstance = new(
+        "SIG016",
+        "Effect method must be an instance method",
+        "Method '{0}' is marked with [Effect] but is static",
+        "SignalsDotnet",
+        DiagnosticSeverity.Error,
+        true);
+
+    public static readonly DiagnosticDescriptor AsyncEffectMethodSignature = new(
+        "SIG017",
+        "Async effect method has an unsupported signature",
+        "Method '{0}' is marked with [AsyncEffect] so it must take a single CancellationToken parameter and return ValueTask or Task",
         "SignalsDotnet",
         DiagnosticSeverity.Error,
         true);
