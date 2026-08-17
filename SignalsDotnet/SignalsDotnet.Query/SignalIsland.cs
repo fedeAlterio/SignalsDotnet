@@ -71,21 +71,21 @@ public sealed class SignalIsland<T>
     ValueTask<TResult> InvokeCoreAsync<TResult>(Func<T, TResult> action, CancellationToken cancellationToken) =>
         _context.InvokeAsync(async token => action(await ValueAsync(token)), cancellationToken);
 
-    public IAwaitable<T> SwitchToSignalContextAsync(CancellationToken cancellationToken = default) =>
-        new SignalContextAwaitable(this, cancellationToken);
+    public IAwaitable<T> SwitchToIslandContextAsync(CancellationToken cancellationToken = default) =>
+        new IslandContextAwaitable(this, cancellationToken);
 
-    readonly struct SignalContextAwaitable(SignalIsland<T> island, CancellationToken cancellationToken) : IAwaitable<T>
+    readonly struct IslandContextAwaitable(SignalIsland<T> island, CancellationToken cancellationToken) : IAwaitable<T>
     {
-        public IAwaiter<T> GetAwaiter() => new SignalContextAwaiter(island, cancellationToken);
+        public IAwaiter<T> GetAwaiter() => new IslandContextAwaiter(island, cancellationToken);
     }
 
-    sealed class SignalContextAwaiter : IAwaiter<T>
+    sealed class IslandContextAwaiter : IAwaiter<T>
     {
         readonly SignalIsland<T> _island;
         readonly CancellationToken _cancellationToken;
         Task<T>? _resolved;
 
-        public SignalContextAwaiter(SignalIsland<T> island, CancellationToken cancellationToken)
+        public IslandContextAwaiter(SignalIsland<T> island, CancellationToken cancellationToken)
         {
             _island = island;
             _cancellationToken = cancellationToken;

@@ -7,7 +7,7 @@
 				<Description>GraphQL-like projection queries over SignalsDotnet models</Description>
 				<PackageReadmeFile>README.md</PackageReadmeFile>
 				<RepositoryUrl>https://github.com/fedeAlterio/SignalsDotnet</RepositoryUrl>
-				<Version>3.1.0</Version>
+				<VersionSuffix>alpha</VersionSuffix>
 				<langversion>latest</langversion>
 				<PackageLicenseFile>LICENSE</PackageLicenseFile>
 				<PackageIcon>icon.png</PackageIcon>

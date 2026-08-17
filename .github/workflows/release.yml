@@ -32,5 +32,11 @@ jobs:
     - name: Pack SignalsDotnet.Blazor
       run: dotnet pack SignalsDotnet/SignalsDotnet.Blazor -c Release --no-build --output .
 
+    - name: Pack SignalsDotnet.Query
+      run: dotnet pack SignalsDotnet/SignalsDotnet.Query -c Release --no-build --output .
+
+    - name: Pack SignalsDotnet.AspNetCore
+      run: dotnet pack SignalsDotnet/SignalsDotnet.AspNetCore -c Release --no-build --output .
+
     - name: Push to NuGet
       run: dotnet nuget push "*.nupkg" --api-key ${{secrets.nuget_api_key}} --source https://api.nuget.org/v3/index.json

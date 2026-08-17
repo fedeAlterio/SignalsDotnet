@@ -8,7 +8,7 @@ sealed class DashboardSeeder(SignalIsland<Dashboard> island) : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var dashboard = await island.SwitchToSignalContextAsync(stoppingToken);
+        var dashboard = await island.SwitchToIslandContextAsync(stoppingToken);
 
         dashboard.Title = "Signals Playground";
         dashboard.Sensors.Value =

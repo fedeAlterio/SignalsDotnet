@@ -9,7 +9,6 @@
 	  <PackageIcon>icon.png</PackageIcon>
 	  <PackageProjectUrl>https://github.com/fedeAlterio/SignalsDotnet</PackageProjectUrl>
 	  <PackageReadmeFile>README.md</PackageReadmeFile>
-	  <Version>3.1.0</Version>
   </PropertyGroup>
 
 	<ItemGroup>

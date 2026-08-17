@@ -108,6 +108,13 @@ Console.WriteLine(fullName.Value); // Grace Lovelace
 - [Blazor Integration](#blazor-integration)
   - [TrackedScope Component](#trackedscope-component)
   - [Inspiration](#inspiration)
+- [Queries](#queries) *(alpha)*
+  - [1. Model the dashboard](#1-model-the-dashboard)
+  - [2. Register it as a SignalIsland](#2-register-it-as-a-signalisland)
+  - [3. Stream it as server-sent events](#3-stream-it-as-server-sent-events)
+  - [4. Consume it from a client](#4-consume-it-from-a-client)
+  - [Query Syntax](#query-syntax)
+  - [A note on threading](#a-note-on-threading)
 
 ---
 
@@ -925,6 +932,153 @@ The `SignalsDotnet.Blazor` package lets components re-render on their own when t
 ### Inspiration
 
 This Blazor signal integration is inspired by **Steven Giesel**'s excellent blog post, [Signals in Blazor](https://steven-giesel.com/blogPost/495d87ca-61df-4c52-a253-8ba4abc186b7).
+
+---
+
+## Queries
+
+> **Alpha.** `SignalsDotnet.Query` and `SignalsDotnet.AspNetCore` ship as prerelease packages; the API may still change.
+
+A client asks for the fields it wants with a GraphQL-like string, and gets a stream that pushes a new projection every time any signal behind those fields changes. Only the selected fields are read, so changes to everything else (including nested models and collection elements) cause no emission.
+
+Install `SignalsDotnet.AspNetCore`; it brings `SignalsDotnet.Query` and `SignalsDotnet` with it. The three steps below build a live dashboard endpoint.
+
+### 1. Model the dashboard
+
+An ordinary signals model. Nothing here knows about queries or HTTP. `[Computed]` members recompute themselves when the signals they read change.
+
+```csharp
+[GenerateSignals]
+public partial class Sensor
+{
+    public partial string Name { get; set; }
+    public partial double Reading { get; set; }
+    public partial bool IsOnline { get; set; }
+}
+
+[GenerateSignals]
+public partial class Dashboard
+{
+    public partial string Title { get; set; }
+
+    [SignalIgnore]
+    public CollectionSignal<ObservableCollection<Sensor>> Sensors { get; } = new();
+
+    [Computed]
+    int ComputeOnlineCount() => Sensors.Value?.Count(x => x.IsOnline) ?? 0;
+
+    [Computed]
+    double ComputeAverage()
+    {
+        var online = Sensors.Value?.Where(x => x.IsOnline).ToArray() ?? [];
+
+        return online.Length == 0 ? 0 : Math.Round(online.Average(x => x.Reading), 2);
+    }
+}
+```
+
+### 2. Register it as a SignalIsland
+
+```csharp
+builder.Services.AddSingletonSignalIsland<Dashboard>();
+```
+
+That registers a `SignalIsland<Dashboard>`, the model plus the Synchronization Context that serializes access to it. Constructor dependencies are resolved through `ActivatorUtilities`, so a model taking services in its constructor just works. `AddScopedSignalIsland<T>` and `AddTransientSignalIsland<T>` are also available, and each has an overload taking a factory when you want to build the instance yourself.
+
+Whatever writes to the model (a hosted service, a message handler, an endpoint) goes through `InvokeAsync`, which queues the delegate onto the island's Synchronization Context. It has sync, async, and value-returning overloads:
+
+```csharp
+await island.InvokeAsync(dashboard => dashboard.Title = "Live");
+
+var ticks = await island.InvokeAsync(dashboard => dashboard.Ticks);
+```
+
+`SwitchToIslandContextAsync` is also available: it is an awaitable that moves the caller onto the island's Synchronization Context and hands back the model.
+
+```csharp
+var dashboard = await island.SwitchToIslandContextAsync(cancellationToken);
+```
+
+### 3. Stream it as server-sent events
+
+Inject the island, parse the client's query, and hand the resulting `IAsyncEnumerable` to `TypedResults.ServerSentEvents`:
+
+```csharp
+app.MapGet("/api/dashboard/stream", (SignalIsland<Dashboard> island, string? query, CancellationToken token) =>
+{
+    if (!SignalsQuery.TryParse(query, out var selection))
+        return Results.BadRequest(new { error = $"'{query}' is not a valid query." });
+
+    return TypedResults.ServerSentEvents(island.ReadComputedValuesAsync(selection, cancellationToken: token));
+});
+```
+
+`ReadComputedValuesAsync` yields the projection immediately, then again on every relevant change, and stops when the request is cancelled. A slow client never blocks the model: the stream is backed by a bounded channel of capacity 1 that drops the oldest value, so it receives the latest state rather than every intermediate one. Serialization follows `SignalsQueryExtensions.DefaultJsonOptions` (web defaults) unless you pass your own `JsonSerializerOptions`.
+
+A client subscribing to `/api/dashboard/stream?query={ title onlineCount }` gets an event whenever `Title` or a sensor's `IsOnline` changes, and nothing when an unselected field does.
+
+### 4. Consume it from a client
+
+Send the query as a query-string parameter and read the response with `SseParser`. Field names are camelCase, matching the web defaults used to serialize them:
+
+```csharp
+var query = """
+    {
+        title
+        onlineCount
+        sensors { name reading isOnline }
+    }
+    """;
+
+var url = $"/api/dashboard/stream?query={Uri.EscapeDataString(query)}";
+
+using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token);
+
+response.EnsureSuccessStatusCode();
+
+await using var stream = await response.Content.ReadAsStreamAsync(token);
+
+await foreach (var item in SseParser.Create(stream).EnumerateAsync(token))
+    Console.WriteLine(item.Data);
+```
+
+Each event carries only the requested fields. See the `Playground` projects for the full working example.
+
+### Query Syntax
+
+A query is a brace-delimited selection set. Fields are separated by whitespace or commas, and nest to any depth:
+
+```
+{ title onlineCount }
+{ title, average, sensors { name reading } }
+```
+
+Field names follow the `JsonSerializerOptions` in use, so with the web defaults they are camelCase and a PascalCase name is rejected. A bare `title` is shorthand for `{ title }`. Selecting an object without a nested set returns it whole, and applied to a collection a query projects each element.
+
+```csharp
+var query = SignalsQuery.Parse("{ title sensors { name } }");
+
+if (!SignalsQuery.TryParse(userInput, out var safe))
+    return Results.BadRequest();
+```
+
+`TryParse` returns `false` on malformed input instead of throwing, so use it for anything client-supplied. A `string` also converts implicitly to `SignalsQuery`.
+
+Parsing only validates the shape of the query. Names are resolved against `T` when the query is compiled, and an unknown or non-selectable field throws `FormatException` there, so an endpoint taking queries from clients should catch it as well as calling `TryParse`.
+
+A query compiles to an ordinary selector, useful on its own:
+
+```csharp
+Func<Dashboard, object?> selector = query.ToQuerySelector<Dashboard>();
+```
+
+### A note on threading
+
+Signals are not thread-safe, but a server model is touched by many concurrent requests. That is what the *island* in `SignalIsland<T>` means: the instance is bound to a Synchronization Context with single-threaded semantics, so work queued to it is serialized, one callback at a time, never overlapping. Your model needs no locks, even as a singleton serving concurrent connections.
+
+This is single-threaded *semantics*, not a dedicated thread. Callbacks are pumped on the thread pool, so successive operations may run on different threads. What is guaranteed is that they never run concurrently. Don't rely on thread affinity or `[ThreadStatic]` state in your model.
+
+This is why access goes through `InvokeAsync` or `SwitchToIslandContextAsync` rather than touching the model directly from wherever you happen to be. The instance itself is created lazily, on first use.
 
 ---
 

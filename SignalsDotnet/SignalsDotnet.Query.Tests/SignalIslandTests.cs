@@ -189,23 +189,23 @@ public class SignalIslandTests
     }
 
     [Fact]
-    public async Task SwitchToSignalContext_ReturnsTheIslandValue()
+    public async Task SwitchToIslandContext_ReturnsTheIslandValue()
     {
         var island = Island<Box>(_ => new ValueTask<Box>(new Box { Value = 9 }));
         using var timeout = Timeout();
 
-        var box = await island.SwitchToSignalContextAsync(timeout.Token);
+        var box = await island.SwitchToIslandContextAsync(timeout.Token);
 
         box.Value.ShouldBe(9);
     }
 
     [Fact]
-    public async Task SwitchToSignalContext_RunsContinuationsOnTheIsland()
+    public async Task SwitchToIslandContext_RunsContinuationsOnTheIsland()
     {
         var island = Island<Box>(_ => new ValueTask<Box>(new Box()));
         using var timeout = Timeout();
 
-        await island.SwitchToSignalContextAsync(timeout.Token);
+        await island.SwitchToIslandContextAsync(timeout.Token);
 
         var onIsland = false;
         await island.InvokeAsync(_ => onIsland = SynchronizationContext.Current is not null, timeout.Token);
@@ -215,14 +215,14 @@ public class SignalIslandTests
     }
 
     [Fact]
-    public async Task SwitchToSignalContext_SerializesWithInvocations()
+    public async Task SwitchToIslandContext_SerializesWithInvocations()
     {
         var island = Island<Box>(_ => new ValueTask<Box>(new Box()));
         using var timeout = Timeout();
 
         await Task.WhenAll(Enumerable.Range(0, 32).Select(_ => Task.Run(async () =>
         {
-            var box = await island.SwitchToSignalContextAsync(timeout.Token);
+            var box = await island.SwitchToIslandContextAsync(timeout.Token);
 
             box.Enter();
             box.Value++;
@@ -235,7 +235,7 @@ public class SignalIslandTests
     }
 
     [Fact]
-    public async Task SwitchToSignalContext_WhenAlreadyOnTheIsland_CompletesSynchronously()
+    public async Task SwitchToIslandContext_WhenAlreadyOnTheIsland_CompletesSynchronously()
     {
         var island = Island<Box>(_ => new ValueTask<Box>(new Box { Value = 3 }));
         using var timeout = Timeout();
@@ -245,7 +245,7 @@ public class SignalIslandTests
 
         await island.InvokeAsync(_ =>
         {
-            var awaiter = island.SwitchToSignalContextAsync(timeout.Token).GetAwaiter();
+            var awaiter = island.SwitchToIslandContextAsync(timeout.Token).GetAwaiter();
 
             completedSynchronously = awaiter.IsCompleted;
             value = awaiter.GetResult().Value;
@@ -256,37 +256,37 @@ public class SignalIslandTests
     }
 
     [Fact]
-    public async Task SwitchToSignalContext_FromOffTheIsland_DoesNotCompleteSynchronously()
+    public async Task SwitchToIslandContext_FromOffTheIsland_DoesNotCompleteSynchronously()
     {
         var island = Island<Box>(_ => new ValueTask<Box>(new Box()));
         using var timeout = Timeout();
 
-        island.SwitchToSignalContextAsync(timeout.Token).GetAwaiter().IsCompleted.ShouldBeFalse();
+        island.SwitchToIslandContextAsync(timeout.Token).GetAwaiter().IsCompleted.ShouldBeFalse();
 
         await island.InvokeAsync(_ => { }, timeout.Token);
     }
 
     [Fact]
-    public async Task SwitchToSignalContext_PropagatesFactoryExceptions()
+    public async Task SwitchToIslandContext_PropagatesFactoryExceptions()
     {
         var island = Island<Box>(_ => throw new InvalidOperationException("factory failed"));
         using var timeout = Timeout();
 
         var exception = await Should.ThrowAsync<InvalidOperationException>(
-            async () => await island.SwitchToSignalContextAsync(timeout.Token));
+            async () => await island.SwitchToIslandContextAsync(timeout.Token));
 
         exception.Message.ShouldBe("factory failed");
     }
 
     [Fact]
-    public async Task SwitchToSignalContext_AThrowingContinuationFaultsTheAwaitingTask()
+    public async Task SwitchToIslandContext_AThrowingContinuationFaultsTheAwaitingTask()
     {
         var island = Island<Box>(_ => new ValueTask<Box>(new Box()));
         using var timeout = Timeout();
 
         var faulted = Task.Run(async () =>
         {
-            await island.SwitchToSignalContextAsync(timeout.Token);
+            await island.SwitchToIslandContextAsync(timeout.Token);
             throw new InvalidOperationException("continuation failed");
         });
 
@@ -296,14 +296,14 @@ public class SignalIslandTests
     }
 
     [Fact]
-    public async Task SwitchToSignalContext_ObservesCancellation()
+    public async Task SwitchToIslandContext_ObservesCancellation()
     {
         var island = Island<Box>(_ => new ValueTask<Box>(new Box()));
         using var cancelled = new CancellationTokenSource();
         cancelled.Cancel();
 
         await Should.ThrowAsync<OperationCanceledException>(
-            async () => await island.SwitchToSignalContextAsync(cancelled.Token));
+            async () => await island.SwitchToIslandContextAsync(cancelled.Token));
     }
 
     [Fact]

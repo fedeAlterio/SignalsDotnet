@@ -25,7 +25,7 @@ public static class SignalIslandExtensions
             SingleWriter = true
         });
 
-        var source = await island.SwitchToSignalContextAsync(cancellationToken);
+        var source = await island.SwitchToIslandContextAsync(cancellationToken);
 
         using var subscription = query.ComputedObservable(source, options)
                                       .Subscribe(value => channel.Writer.TryWrite(value),
