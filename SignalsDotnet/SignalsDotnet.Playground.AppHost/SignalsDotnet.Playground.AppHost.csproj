@@ -1,0 +1,16 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.4.6">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UserSecretsId>eac971bf-12c4-493d-aa91-7711fd459cc6</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SignalsDotnet.Playground\SignalsDotnet.Playground.csproj" />
+    <ProjectReference Include="..\SignalsDotnet.Playground.Client\SignalsDotnet.Playground.Client.csproj" />
+  </ItemGroup>
+
+</Project>
