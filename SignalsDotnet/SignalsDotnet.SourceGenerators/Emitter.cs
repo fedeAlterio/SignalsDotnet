@@ -431,7 +431,6 @@ static class Emitter
         builder.AppendLine();
 
         builder.AppendLine($"/// <summary>Computed from <see cref=\"{property.MethodName}\"/>.</summary>");
-        EmitIgnoreOnSerialization(builder, systemTextJsonAvailable);
         builder.AppendLine($"{property.Accessibility} {property.TypeName} {property.Name} => {property.FieldName}.Value;");
     }
 
@@ -454,7 +453,6 @@ static class Emitter
         builder.AppendLine();
 
         builder.AppendLine($"/// <summary>Computed from <see cref=\"{property.MethodName}\"/>.</summary>");
-        EmitIgnoreOnSerialization(builder, systemTextJsonAvailable);
         builder.AppendLine($"{property.Accessibility} {property.TypeName} {property.Name} => {property.FieldName}.Value;");
     }
 }

@@ -30,13 +30,15 @@ public record ReadonlySignalConfiguration<T>(IEqualityComparer<T> Comparer,
         get
         {
             var currentVersion = ReadonlySignalConfiguration.Version;
-            if (_version == currentVersion) return field!;
+            if (Volatile.Read(ref _version) == currentVersion && field is not null)
+                return field;
 
-            _version = currentVersion;
             var defaultConfig = ReadonlySignalConfiguration.Default;
             var defaultValue = new ReadonlySignalConfiguration<T>(EqualityComparer<T>.Default,
                 defaultConfig.RaiseOnlyWhenChanged, defaultConfig.SubscribeWeakly, defaultConfig.SubscriptionStrategy);
+
             field = defaultValue;
+            Volatile.Write(ref _version, currentVersion);
 
             return defaultValue;
         }
