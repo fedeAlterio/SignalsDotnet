@@ -158,4 +158,84 @@ public class SignalIslandServiceCollectionExtensionsTests
         Should.Throw<ArgumentNullException>(() => ((IServiceCollection)null!).AddScopedSignalIsland<Plain>());
         Should.Throw<ArgumentNullException>(() => ((IServiceCollection)null!).AddTransientSignalIsland<Plain>());
     }
+
+    [Fact]
+    public async Task TheFactoryOverload_BuildsTheModel()
+    {
+        var services = new ServiceCollection();
+        services.AddSingletonSignalIsland(_ => new Model(new Dependency()) { Value = 5 });
+
+        using var provider = services.BuildServiceProvider();
+        using var timeout = Timeout();
+
+        var island = provider.GetRequiredService<SignalIsland<Model>>();
+
+        var observed = await island.InvokeAsync(model => model.Value, timeout.Token);
+
+        observed.ShouldBe(5);
+    }
+
+    [Fact]
+    public async Task TheFactoryOverload_ReceivesTheServiceProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<Dependency>();
+        services.AddSingletonSignalIsland(provider => new Model(provider.GetRequiredService<Dependency>()));
+
+        using var provider = services.BuildServiceProvider();
+        using var timeout = Timeout();
+
+        var island = provider.GetRequiredService<SignalIsland<Model>>();
+
+        Dependency? fromIsland = null;
+        await island.InvokeAsync(model => fromIsland = model.Dependency, timeout.Token);
+
+        fromIsland.ShouldBeSameAs(provider.GetRequiredService<Dependency>());
+    }
+
+    [Fact]
+    public void TheFactoryOverload_RegistersOnlyTheIsland()
+    {
+        var services = new ServiceCollection();
+        services.AddSingletonSignalIsland(_ => new Plain());
+
+        services.Select(x => x.ServiceType).ShouldBe([typeof(SignalIsland<Plain>)]);
+    }
+
+    [Fact]
+    public void TheFactoryOverloads_UseTheRequestedLifetime()
+    {
+        new ServiceCollection().AddSingletonSignalIsland(_ => new Plain()).Single().Lifetime.ShouldBe(ServiceLifetime.Singleton);
+        new ServiceCollection().AddScopedSignalIsland(_ => new Plain()).Single().Lifetime.ShouldBe(ServiceLifetime.Scoped);
+        new ServiceCollection().AddTransientSignalIsland(_ => new Plain()).Single().Lifetime.ShouldBe(ServiceLifetime.Transient);
+    }
+
+    [Fact]
+    public async Task TheScopedFactoryOverload_ResolvesFromTheOwningScope()
+    {
+        var services = new ServiceCollection();
+        services.AddScoped<Dependency>();
+        services.AddScopedSignalIsland(provider => new Model(provider.GetRequiredService<Dependency>()));
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        using var timeout = Timeout();
+
+        var island = scope.ServiceProvider.GetRequiredService<SignalIsland<Model>>();
+
+        Dependency? fromIsland = null;
+        await island.InvokeAsync(model => fromIsland = model.Dependency, timeout.Token);
+
+        fromIsland.ShouldBeSameAs(scope.ServiceProvider.GetRequiredService<Dependency>());
+    }
+
+    [Fact]
+    public void NullFactory_Throws()
+    {
+        var services = new ServiceCollection();
+
+        Should.Throw<ArgumentNullException>(() => services.AddSingletonSignalIsland((Func<IServiceProvider, Plain>)null!));
+        Should.Throw<ArgumentNullException>(() => services.AddScopedSignalIsland((Func<IServiceProvider, Plain>)null!));
+        Should.Throw<ArgumentNullException>(() => services.AddTransientSignalIsland((Func<IServiceProvider, Plain>)null!));
+    }
 }
