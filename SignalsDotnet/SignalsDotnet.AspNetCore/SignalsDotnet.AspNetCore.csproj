@@ -1,12 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 		<PropertyGroup>
-				<TargetFrameworks>net8.0;netstandard2.1</TargetFrameworks>
+				<TargetFrameworks>net8.0</TargetFrameworks>
 				<ImplicitUsings>enable</ImplicitUsings>
 				<Nullable>enable</Nullable>
-				<Description>Porting of Angular signals to dotnet</Description>
+				<Description>ASP.NET Core integration for SignalsDotnet</Description>
 				<PackageReadmeFile>README.md</PackageReadmeFile>
 				<RepositoryUrl>https://github.com/fedeAlterio/SignalsDotnet</RepositoryUrl>
+				<VersionSuffix>alpha</VersionSuffix>
 				<langversion>latest</langversion>
 				<PackageLicenseFile>LICENSE</PackageLicenseFile>
 				<PackageIcon>icon.png</PackageIcon>
@@ -29,27 +30,12 @@
 		</ItemGroup>
 
 		<ItemGroup>
-				<ProjectReference Include="..\SignalsDotnet.SourceGenerators\SignalsDotnet.SourceGenerators.csproj"
-													OutputItemType="Analyzer"
-													ReferenceOutputAssembly="false" />
+				<FrameworkReference Include="Microsoft.AspNetCore.App" />
 		</ItemGroup>
 
 		<ItemGroup>
-				<None Include="..\SignalsDotnet.SourceGenerators\bin\$(Configuration)\netstandard2.0\SignalsDotnet.SourceGenerators.dll"
-							Pack="true"
-							PackagePath="analyzers/dotnet/cs"
-							Visible="false" />
+				<ProjectReference Include="..\SignalsDotnet\SignalsDotnet.csproj" />
+				<ProjectReference Include="..\SignalsDotnet.Query\SignalsDotnet.Query.csproj" />
 		</ItemGroup>
-
-		<ItemGroup>
-				<PackageReference Include="R3" Version="1.2.9" />
-
-				<PackageReference Include="PolySharp" Version="1.14.1">
-						<PrivateAssets>all</PrivateAssets>
-						<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-				</PackageReference>
-
-		</ItemGroup>
-
 
 </Project>

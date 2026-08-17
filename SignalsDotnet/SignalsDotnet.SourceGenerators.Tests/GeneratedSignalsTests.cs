@@ -605,23 +605,30 @@ public class GeneratedSignalsTests
 
         var names = document.RootElement.EnumerateObject().Select(x => x.Name).ToArray();
 
-        names.Should().BeEquivalentTo(nameof(Person.Name), nameof(Person.Age));
+        names.Should().BeEquivalentTo(nameof(Person.Name), nameof(Person.Age), nameof(Person.FullName));
     }
 
     [Fact(Timeout = TestTimeoutMs)]
-    public async Task Computed_and_signal_members_are_ignored_on_serialization()
+    public async Task Signal_members_are_ignored_on_serialization()
     {
         await this.SwitchToMainThread();
 
         AssertIgnored<Person>(nameof(Person.NameSignal));
         AssertIgnored<Person>(nameof(Person.AgeSignal));
-        AssertIgnored<Person>(nameof(Person.FullName));
         AssertIgnored<Person>(nameof(Person.FullNameSignal));
         AssertIgnored<Person>(nameof(Person.ModelChanged));
 
-        AssertIgnored<AsyncPerson>(nameof(AsyncPerson.Greeting));
         AssertIgnored<AsyncPerson>(nameof(AsyncPerson.GreetingSignal));
         AssertIgnored<AsyncPerson>(nameof(AsyncPerson.IsGreetingComputing));
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Computed_values_are_serialized()
+    {
+        await this.SwitchToMainThread();
+
+        AssertNotIgnored<Person>(nameof(Person.FullName));
+        AssertNotIgnored<AsyncPerson>(nameof(AsyncPerson.Greeting));
     }
 
     [Fact(Timeout = TestTimeoutMs)]
@@ -646,6 +653,18 @@ public class GeneratedSignalsTests
 
         property!.GetCustomAttribute<IgnoreDataMemberAttribute>()
                  .Should().NotBeNull($"{propertyName} should carry [IgnoreDataMember]");
+    }
+
+    static void AssertNotIgnored<T>(string propertyName)
+    {
+        var property = typeof(T).GetProperty(propertyName);
+        property.Should().NotBeNull($"{propertyName} should exist on {typeof(T).Name}");
+
+        property!.GetCustomAttribute<JsonIgnoreAttribute>()
+                 .Should().BeNull($"{propertyName} should be queryable and serialized");
+
+        property!.GetCustomAttribute<IgnoreDataMemberAttribute>()
+                 .Should().BeNull($"{propertyName} should be queryable and serialized");
     }
 
     [Fact(Timeout = TestTimeoutMs)]
