@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 		<PropertyGroup>
-				<TargetFrameworks>net8.0</TargetFrameworks>
+				<TargetFrameworks>net10.0</TargetFrameworks>
 				<ImplicitUsings>enable</ImplicitUsings>
 				<Nullable>enable</Nullable>
 				<Description>ASP.NET Core integration for SignalsDotnet</Description>
@@ -27,6 +27,10 @@
 						<Pack>True</Pack>
 						<PackagePath>\</PackagePath>
 				</None>
+		</ItemGroup>
+
+		<ItemGroup>
+				<EmbeddedResource Include="Ui\SignalsQueryUi.html" />
 		</ItemGroup>
 
 		<ItemGroup>

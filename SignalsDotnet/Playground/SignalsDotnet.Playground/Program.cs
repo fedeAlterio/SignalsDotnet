@@ -8,6 +8,7 @@ builder.Services.AddHostedService<DashboardSeeder>();
 
 var app = builder.Build();
 
-app.MapDashboardStreamEndpoint();
+app.MapSignalIsland<Dashboard>("/api/dashboard/stream");
+app.MapSignalsQueryUi("/signals");
 
 app.Run();
