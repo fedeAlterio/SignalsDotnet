@@ -1,7 +1,10 @@
 using System.Collections;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 
 namespace SignalsDotnet.Query.Internals;
@@ -27,13 +30,20 @@ static class ProjectionBuilder
 
         foreach (var field in fields)
         {
-            if (!properties.TryGetValue(field.Name, out var property))
-                throw new FormatException($"'{source.Type.Name}' has no JSON property named '{field.Name}'.");
+            Expression value;
 
-            Expression value = Expression.Property(source, property);
+            if (field.IsCall)
+                value = BuildCall(source, field, options);
+            else if (properties.TryGetValue(field.Name, out var property))
+                value = Expression.Property(source, property);
+            else if (TryFindMethod(source.Type, field, options, out var method))
+                value = BuildCall(source, field, method, options);
+            else
+                throw new FormatException(NotFound(source.Type, field, options));
+
             var projected = BuildProjection(value, field.Children, options);
 
-            entries.Add(Expression.ElementInit(add, Expression.Constant(field.Name), Box(projected)));
+            entries.Add(Expression.ElementInit(add, Expression.Constant(field.Key), Box(projected)));
         }
 
         Expression dictionary = Expression.ListInit(Expression.New(typeof(Dictionary<string, object?>)), entries);
@@ -42,6 +52,146 @@ static class ProjectionBuilder
             ? dictionary
             : NullGuard(source, dictionary);
     }
+
+    static Expression BuildCall(Expression source, SelectionField field, JsonSerializerOptions options)
+    {
+        if (!TryFindMethod(source.Type, field, options, out var method))
+            throw new FormatException(NotFound(source.Type, field, options));
+
+        return BuildCall(source, field, method, options);
+    }
+
+    static string NotFound(Type type, SelectionField field, JsonSerializerOptions options)
+    {
+        var hidden = type.GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                         .Any(x => IsQueryable(x) && NameMatches(field.Name, x.Name, options));
+
+        return hidden
+            ? $"'{type.Name}.{field.Name}' is not queryable. Annotate it with [{nameof(SignalQueryableAttribute)}] to expose it."
+            : $"'{type.Name}' has no queryable property or method named '{field.Name}'.";
+    }
+
+    static Expression BuildCall(Expression source, SelectionField field, MethodInfo method, JsonSerializerOptions options)
+    {
+        var parameters = method.GetParameters();
+        var arguments = new Expression[parameters.Length];
+
+        var unknown = field.ArgumentsOrEmpty.FirstOrDefault(x => !parameters.Any(p => NameMatches(x.Name, p.Name, options)));
+
+        if (unknown is not null)
+            throw new FormatException($"'{field.Name}' has no argument named '{unknown.Name}'.");
+
+        for (var i = 0; i < parameters.Length; i++)
+        {
+            var parameter = parameters[i];
+            var supplied = field.ArgumentsOrEmpty.FirstOrDefault(x => NameMatches(x.Name, parameter.Name, options));
+
+            if (supplied is null)
+            {
+                if (!parameter.HasDefaultValue)
+                    throw new FormatException($"Argument '{parameter.Name}' of '{field.Name}' is required.");
+
+                arguments[i] = Expression.Constant(parameter.DefaultValue, parameter.ParameterType);
+                continue;
+            }
+
+            arguments[i] = Expression.Constant(ConvertArgument(supplied, parameter, field), parameter.ParameterType);
+        }
+
+        return Expression.Call(source, method, arguments);
+    }
+
+    static object? ConvertArgument(SelectionArgument argument, ParameterInfo parameter, SelectionField field)
+    {
+        var type = Nullable.GetUnderlyingType(parameter.ParameterType) ?? parameter.ParameterType;
+
+        if (argument.Value is null)
+        {
+            if (parameter.ParameterType.IsValueType && Nullable.GetUnderlyingType(parameter.ParameterType) is null)
+                throw new FormatException($"Argument '{argument.Name}' of '{field.Name}' cannot be null.");
+
+            return null;
+        }
+
+        if (type.IsInstanceOfType(argument.Value))
+            return argument.Value;
+
+        try
+        {
+            if (type.IsEnum)
+                return argument.Value is string name
+                    ? Enum.Parse(type, name, ignoreCase: true)
+                    : Enum.ToObject(type, argument.Value);
+
+            if (type == typeof(Guid) && argument.Value is string guid)
+                return Guid.Parse(guid);
+
+            if (type == typeof(TimeSpan) && argument.Value is string span)
+                return TimeSpan.Parse(span, CultureInfo.InvariantCulture);
+
+            if (type == typeof(DateTime) && argument.Value is string dateTime)
+                return DateTime.Parse(dateTime, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+
+            if (type == typeof(DateTimeOffset) && argument.Value is string dateTimeOffset)
+                return DateTimeOffset.Parse(dateTimeOffset, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+
+            return Convert.ChangeType(argument.Value, type, CultureInfo.InvariantCulture);
+        }
+        catch (Exception exception) when (exception is InvalidCastException or FormatException or OverflowException or ArgumentException)
+        {
+            throw new FormatException($"Argument '{argument.Name}' of '{field.Name}' is not a valid {type.Name}.");
+        }
+    }
+
+    static bool TryFindMethod(Type type, SelectionField field, JsonSerializerOptions options, [NotNullWhen(true)] out MethodInfo? method)
+    {
+        var candidates = GetQueryableMethods(type).Where(x => NameMatches(field.Name, x.Name, options)).ToList();
+
+        if (candidates.Count > 1)
+        {
+            var matching = candidates.Where(x => Binds(x, field, options)).ToList();
+
+            if (matching.Count > 1)
+                throw new FormatException($"'{field.Name}' is ambiguous between {matching.Count} overloads.");
+
+            candidates = matching;
+        }
+
+        method = candidates.FirstOrDefault();
+        return method is not null;
+    }
+
+    static bool Binds(MethodInfo method, SelectionField field, JsonSerializerOptions options)
+    {
+        var parameters = method.GetParameters();
+
+        return parameters.All(p => p.HasDefaultValue || field.ArgumentsOrEmpty.Any(a => NameMatches(a.Name, p.Name, options)))
+            && field.ArgumentsOrEmpty.All(a => parameters.Any(p => NameMatches(a.Name, p.Name, options)));
+    }
+
+    static bool NameMatches(string queried, string? declared, JsonSerializerOptions options) =>
+        declared is not null
+     && (string.Equals(queried, declared, StringComparison.Ordinal)
+      || string.Equals(queried, options.PropertyNamingPolicy?.ConvertName(declared), StringComparison.Ordinal));
+
+    internal static IEnumerable<MethodInfo> GetQueryableMethods(Type type)
+    {
+        var all = type.GetCustomAttribute<SignalQueryableAttribute>(inherit: true) is not null;
+
+        return type.GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                   .Where(x => IsQueryable(x)
+                            && (all || x.GetCustomAttribute<SignalQueryableAttribute>(inherit: true) is not null));
+    }
+
+    static bool IsQueryable(MethodInfo method) => !method.IsSpecialName
+                                               && !method.IsGenericMethodDefinition
+                                               && method.DeclaringType != typeof(object)
+                                               && method.ReturnType != typeof(void)
+                                               && !method.GetParameters().Any(p => p.IsOut || p.ParameterType.IsByRef)
+                                               && !typeof(Task).IsAssignableFrom(method.ReturnType)
+                                               && !typeof(ValueTask).IsAssignableFrom(method.ReturnType)
+                                               && !(method.ReturnType.IsGenericType
+                                                 && method.ReturnType.GetGenericTypeDefinition() == typeof(ValueTask<>));
 
     static Expression Unwrap(Expression source)
     {

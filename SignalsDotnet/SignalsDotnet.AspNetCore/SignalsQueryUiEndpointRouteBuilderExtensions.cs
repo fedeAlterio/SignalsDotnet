@@ -79,8 +79,43 @@ static class SchemaBuilder
             schema[name] = IsLeaf(valueType) ? null : Build(valueType, seen, depth + 1);
         }
 
+        foreach (var method in SignalsQueryExtensions.GetQueryableMethods(type))
+        {
+            var name = options.PropertyNamingPolicy?.ConvertName(method.Name) ?? method.Name;
+
+            if (schema.ContainsKey(name))
+                continue;
+
+            var returnType = Unwrap(method.ReturnType);
+            var fields = IsLeaf(returnType) ? null : Build(returnType, seen, depth + 1);
+
+            schema[name] = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["$args"] = method.GetParameters()
+                                  .Select(p => new Dictionary<string, object?>(StringComparer.Ordinal)
+                                  {
+                                      ["name"] = options.PropertyNamingPolicy?.ConvertName(p.Name ?? "") ?? p.Name,
+                                      ["type"] = TypeName(p.ParameterType),
+                                      ["optional"] = p.HasDefaultValue
+                                  })
+                                  .ToList(),
+                ["$fields"] = fields
+            };
+        }
+
         seen.Remove(type);
         return schema;
+    }
+
+    static string TypeName(Type type)
+    {
+        var value = Nullable.GetUnderlyingType(type) ?? type;
+
+        return value == typeof(int) || value == typeof(long) || value == typeof(short) ? "int"
+             : value == typeof(double) || value == typeof(float) || value == typeof(decimal) ? "float"
+             : value == typeof(bool) ? "bool"
+             : value == typeof(string) ? "string"
+             : value.Name;
     }
 
     static bool IsInfrastructure(Type type) => !IsProjectable(type)

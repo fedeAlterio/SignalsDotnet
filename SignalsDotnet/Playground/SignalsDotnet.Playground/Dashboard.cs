@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using SignalsDotnet;
+using SignalsDotnet.Query;
 
 namespace SignalsDotnet.Playground;
 
@@ -12,6 +13,17 @@ public partial class Dashboard
 
     [SignalIgnore]
     public CollectionSignal<ObservableCollection<Sensor>> Sensors { get; } = new();
+
+    [SignalQueryable]
+    public Sensor? GetSensorByIndex(int index) => Sensors.Value?.ElementAtOrDefault(index);
+
+    [SignalQueryable]
+    public IReadOnlyList<Sensor> GetSensorsAbove(double threshold, bool onlineOnly = true) =>
+        Sensors.Value?.Where(x => (!onlineOnly || x.IsOnline) && x.Reading > threshold).ToList() ?? [];
+
+    [SignalQueryable]
+    public Sensor? FindSensor(string name) =>
+        Sensors.Value?.FirstOrDefault(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase));
 
     [Computed]
     int ComputeSensorCount() => Sensors.Value?.Count ?? 0;
@@ -108,6 +120,17 @@ public partial class Sensor
                            : Adjusted > 28 ? "high"
                            : Adjusted < 18 ? "low"
                            : "normal";
+
+    [SignalQueryable]
+    public double ReadingIn(string unit) => unit switch
+    {
+        "F" => Math.Round(Reading * 9 / 5 + 32, 2),
+        "K" => Math.Round(Reading + 273.15, 2),
+        _ => Reading
+    };
+
+    [SignalQueryable]
+    public bool IsAbove(double threshold) => Reading > threshold;
 }
 
 [GenerateSignals]

@@ -77,6 +77,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13
 .tok-brace-1{color:#7f8a83}
 .tok-field{color:var(--text)}
 .tok-bad{color:var(--warn-soft);text-decoration:wavy underline var(--warn);text-underline-offset:3px}
+.tok-arg{color:#9aa7b5}
+.tok-string{color:#c2a06a}
+.tok-number{color:#8fb3a0}
+.tok-keyword{color:#8fa8c8}
+.tok-paren{color:var(--dim)}
 .status{flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;height:30px;font-size:11px;box-shadow:inset 0 1px 0 var(--line)}
 .status-ok{color:var(--accent-soft)}
 .status-err{color:var(--warn-soft)}
@@ -232,24 +237,111 @@ function parse(text){
   var pos = 0, tokens = [];
   function skipWs(){ while(pos<text.length && (/\s/.test(text[pos])||text[pos]===",")) pos++; }
   function fail(msg,at){ var e=new Error(msg); e.position=at; throw e; }
-  function parseName(){
+  function parseNameRaw(){
     var start=pos;
     if(pos<text.length && isNameStart(text[pos])) pos++;
     else fail("Expected a field name at position "+pos, pos);
     while(pos<text.length && isNamePart(text[pos])) pos++;
-    tokens.push({s:start,e:pos,t:"field"});
     return text.slice(start,pos);
+  }
+  function parseName(){
+    var start=pos, name=parseNameRaw();
+    tokens.push({s:start,e:pos,t:"field"});
+    return name;
+  }
+  function parseValue(){
+    if(pos>=text.length) fail("Expected a value at position "+pos, pos);
+    var c=text[pos], start=pos;
+    if(c==='"'){
+      pos++;
+      for(;;){
+        if(pos>=text.length) fail("Unterminated string at position "+pos, pos);
+        if(text[pos]==="\n"||text[pos]==="\r") fail("Unterminated string at position "+pos, pos);
+        if(text[pos]==="\\"){ pos+=2; continue; }
+        if(text[pos]==='"'){ pos++; break; }
+        pos++;
+      }
+      tokens.push({s:start,e:pos,t:"string"});
+      return;
+    }
+    if(c==="-"||c==="+"||/[0-9]/.test(c)){
+      if(c==="-"||c==="+") pos++;
+      var digits=0;
+      while(pos<text.length&&/[0-9]/.test(text[pos])){ pos++; digits++; }
+      if(!digits) fail("Expected a number at position "+start, start);
+      if(pos<text.length&&text[pos]==="."){
+        pos++;
+        var frac=0;
+        while(pos<text.length&&/[0-9]/.test(text[pos])){ pos++; frac++; }
+        if(!frac) fail("Expected a digit at position "+pos, pos);
+      }
+      if(pos<text.length&&(text[pos]==="e"||text[pos]==="E")){
+        pos++;
+        if(pos<text.length&&(text[pos]==="-"||text[pos]==="+")) pos++;
+        var exp=0;
+        while(pos<text.length&&/[0-9]/.test(text[pos])){ pos++; exp++; }
+        if(!exp) fail("Expected a digit at position "+pos, pos);
+      }
+      tokens.push({s:start,e:pos,t:"number"});
+      return;
+    }
+    if(isNameStart(c)){
+      while(pos<text.length&&isNamePart(text[pos])) pos++;
+      var word=text.slice(start,pos);
+      if(word!=="true"&&word!=="false"&&word!=="null") fail("Unexpected value '"+word+"' at position "+start, start);
+      tokens.push({s:start,e:pos,t:"keyword"});
+      return;
+    }
+    fail("Expected a value at position "+pos, pos);
+  }
+  function parseArgs(){
+    tokens.push({s:pos,e:pos+1,t:"paren"});
+    pos++;
+    var names=[], count=0;
+    for(;;){
+      skipWs();
+      if(pos<text.length && text[pos]===")") break;
+      if(pos>=text.length) fail("Expected ')' at position "+pos, pos);
+      var start=pos, name=parseNameRaw();
+      tokens.push({s:start,e:pos,t:"arg"});
+      skipWs();
+      if(pos>=text.length||text[pos]!==":") fail("Expected ':' after argument '"+name+"' at position "+pos, pos);
+      pos++;
+      skipWs();
+      if(names.indexOf(name)>=0) fail("Duplicate argument '"+name+"' at position "+pos, pos);
+      names.push(name);
+      parseValue();
+      count++;
+    }
+    if(count===0) fail("Expected at least one argument at position "+pos, pos);
+    tokens.push({s:pos,e:pos+1,t:"paren"});
+    pos++;
+    return names;
   }
   function parseFields(depth){
     var fields=[];
     for(;;){
       skipWs();
       if(pos>=text.length || text[pos]==="}") break;
-      var name=parseName();
+      var name=parseName(), alias=null;
       skipWs();
+      if(pos<text.length && text[pos]===":"){
+        pos++;
+        skipWs();
+        alias=name;
+        name=parseName();
+        skipWs();
+      }
+      var args=null, argsText="";
+      if(pos<text.length && text[pos]==="("){
+        var argsStart=pos;
+        args=parseArgs();
+        argsText=text.slice(argsStart+1,pos-1).replace(/\s+/g," ").trim();
+        skipWs();
+      }
       var children=[];
       if(pos<text.length && text[pos]==="{") children=parseSet(depth+1);
-      fields.push({name:name,children:children,depth:depth});
+      fields.push({name:name,alias:alias,args:args,argsText:argsText,children:children,depth:depth});
     }
     if(fields.length===0) fail("Expected at least one field at position "+pos, pos);
     return fields;
@@ -298,8 +390,9 @@ function formatQuery(text){
   function emit(fs,indent){
     fs.forEach(function(f){
       var pad=new Array(indent+1).join("    ");
-      if(f.children.length){ out.push(pad+f.name+" {"); emit(f.children,indent+1); out.push(pad+"}"); }
-      else out.push(pad+f.name);
+      var head=(f.alias?f.alias+": ":"")+f.name+(f.args?"("+f.argsText+")":"");
+      if(f.children.length){ out.push(pad+head+" {"); emit(f.children,indent+1); out.push(pad+"}"); }
+      else out.push(pad+head);
     });
   }
   out.push("{"); emit(r.fields,1); out.push("}");
@@ -316,7 +409,20 @@ function renderHighlight(text){
     var partial=[], p=0;
     while(p<text.length){
       var c=text[p];
-      if(isNameStart(c)){ var s=p; while(p<text.length&&isNamePart(text[p]))p++; partial.push({s:s,e:p,t:"field"}); }
+      if(isNameStart(c)){
+        var s=p;
+        while(p<text.length&&isNamePart(text[p]))p++;
+        var word=text.slice(s,p);
+        partial.push({s:s,e:p,t:(word==="true"||word==="false"||word==="null")?"keyword":"field"});
+      }
+      else if(c==='"'){
+        var q=p; p++;
+        while(p<text.length&&text[p]!=='"'&&text[p]!=="\n"&&text[p]!=="\r"){ if(text[p]==="\\")p++; p++; }
+        if(p<text.length&&text[p]==='"')p++;
+        partial.push({s:q,e:p,t:"string"});
+      }
+      else if(/[0-9]/.test(c)){ var n=p; while(p<text.length&&/[0-9.eE+\-]/.test(text[p]))p++; partial.push({s:n,e:p,t:"number"}); }
+      else if(c==="("||c===")"){ partial.push({s:p,e:p+1,t:"paren"}); p++; }
       else if(c==="{"||c==="}"){ partial.push({s:p,e:p+1,t:"brace",d:0}); p++; }
       else p++;
     }
@@ -327,7 +433,14 @@ function renderHighlight(text){
   var merged=[]; spans.forEach(function(sp){ if(!merged.length||sp.s>=merged[merged.length-1].e) merged.push(sp); });
   merged.forEach(function(sp){
     if(sp.s>last) html+=esc(text.slice(last,sp.s));
-    var cls = sp.t==="field" ? "tok-field" : sp.t==="bad" ? "tok-bad" : (sp.d%2 ? "tok-brace-1" : "tok-brace");
+    var cls = sp.t==="field" ? "tok-field"
+            : sp.t==="bad" ? "tok-bad"
+            : sp.t==="arg" ? "tok-arg"
+            : sp.t==="string" ? "tok-string"
+            : sp.t==="number" ? "tok-number"
+            : sp.t==="keyword" ? "tok-keyword"
+            : sp.t==="paren" ? "tok-paren"
+            : (sp.d%2 ? "tok-brace-1" : "tok-brace");
     html+='<span class="'+cls+'">'+esc(text.slice(sp.s,sp.e))+"</span>";
     last=sp.e;
   });
@@ -611,8 +724,9 @@ function showAc(force){
   if(!w.text&&!force){ hideAc(); return; }
   var used=usedNames(w);
   var names=collectNames(schema).filter(function(n){
-    if(used.indexOf(n)>=0) return false;
-    return w.text ? n.indexOf(w.text)===0 : true;
+    var bare=n.split("(")[0];
+    if(bare===n && used.indexOf(bare)>=0) return false;
+    return w.text ? bare.indexOf(w.text)===0 : true;
   });
   if(!names.length){ hideAc(); return; }
   acItems=names.slice(0,8); acIndex=0;
@@ -634,16 +748,27 @@ function usedNames(w){
   }
   return out;
 }
+function argsOf(node){ return node && typeof node==="object" && node.$args ? node.$args : null; }
+
 function collectNames(node){
   var out=[];
-  (function walk(n){ Object.keys(n||{}).forEach(function(k){ out.push(k); if(n[k]&&typeof n[k]==="object") walk(n[k]); }); })(node);
+  (function walk(n){
+    Object.keys(n||{}).forEach(function(k){
+      if(k==="$args"||k==="$fields") return;
+      var child=n[k], args=argsOf(child);
+      out.push(args ? k+"("+args.map(function(a){ return a.name+": "; }).join(", ")+")" : k);
+      if(args) child=child.$fields;
+      if(child&&typeof child==="object") walk(child);
+    });
+  })(node);
   return out.filter(function(v,i,a){ return a.indexOf(v)===i; });
 }
 function applyAc(){
   if(!acItems.length) return;
   var w=currentWord(), pick=acItems[acIndex];
   editor.value=editor.value.slice(0,w.start)+pick+editor.value.slice(w.end);
-  var caret=w.start+pick.length;
+  var firstArg=pick.indexOf(": ");
+  var caret=w.start+(firstArg>=0?firstArg+2:pick.length);
   editor.selectionStart=editor.selectionEnd=caret;
   justApplied=true;
   hideAc(); syncEditor();

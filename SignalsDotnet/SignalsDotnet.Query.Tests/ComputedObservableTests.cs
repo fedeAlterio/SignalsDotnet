@@ -12,6 +12,9 @@ public partial class Address
 {
     public partial string City { get; set; }
     public partial string Zip { get; set; }
+
+    [SignalQueryable]
+    public string Format(string separator) => $"{City}{separator}{Zip}";
 }
 
 [GenerateSignals]
@@ -20,6 +23,12 @@ public partial class Employee
     public partial string Name { get; set; }
     public partial int Age { get; set; }
     public partial Address? Home { get; set; }
+
+    [SignalQueryable]
+    public string Greet(string prefix) => $"{prefix}{Name}";
+
+    [SignalQueryable]
+    public int AgeIn(int years) => Age + years;
 }
 
 [GenerateSignals]
@@ -365,5 +374,50 @@ public class ComputedObservableTests
 
         first.Last.ShouldBe("""{"name":"Ada"}""");
         second.Last.ShouldBe("""{"name":"Bob"}""");
+    }
+
+    [Fact]
+    public void CallingAMethod_EmitsTheInitialResult()
+    {
+        using var recorder = new Recorder(new SignalsQuery("""{ greet(prefix: "Hi ") }""").ComputedObservable(NewEmployee()));
+
+        recorder.Count.ShouldBe(1);
+        recorder.Last.ShouldBe("""{"greet":"Hi Ada"}""");
+    }
+
+    [Fact]
+    public void ChangingASignalReadByACalledMethod_Emits()
+    {
+        var employee = NewEmployee();
+        using var recorder = new Recorder(new SignalsQuery("""{ greet(prefix: "Hi ") }""").ComputedObservable(employee));
+
+        employee.Name = "Bob";
+
+        recorder.Last.ShouldBe("""{"greet":"Hi Bob"}""");
+        recorder.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public void ChangingASignalNotReadByACalledMethod_DoesNotEmit()
+    {
+        var employee = NewEmployee();
+        using var recorder = new Recorder(new SignalsQuery("""{ greet(prefix: "Hi ") }""").ComputedObservable(employee));
+
+        employee.Age = 50;
+
+        recorder.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public void AliasedCallsToTheSameMethod_TrackTheirOwnArguments()
+    {
+        var employee = NewEmployee();
+        using var recorder = new Recorder(new SignalsQuery("{ now: ageIn(years: 0) later: ageIn(years: 10) }").ComputedObservable(employee));
+
+        recorder.Last.ShouldBe("""{"now":36,"later":46}""");
+
+        employee.Age = 40;
+
+        recorder.Last.ShouldBe("""{"now":40,"later":50}""");
     }
 }
