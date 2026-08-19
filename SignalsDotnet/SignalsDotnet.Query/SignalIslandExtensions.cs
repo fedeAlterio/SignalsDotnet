@@ -8,7 +8,7 @@ namespace SignalsDotnet.Query;
 public static class SignalIslandExtensions
 {
     public static async IAsyncEnumerable<object?> ReadComputedValuesAsync<T>(this SignalIsland<T> island,
-                                                                           SignalsQuery query,
+                                                                           SignalComputedQuery query,
                                                                            JsonSerializerOptions? options = null,
                                                                            [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {

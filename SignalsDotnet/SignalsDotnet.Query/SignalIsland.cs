@@ -12,11 +12,12 @@ public static class SignalIsland
 
 public sealed class SignalIsland<T>
 {
-    readonly SynchronizationContext _context;
     readonly Func<CancellationToken, ValueTask<T>> _factory;
     readonly object _gate = new();
 
     TaskCompletionSource<T>? _value;
+
+    public SynchronizationContext Context { get; }
 
     public SignalIsland(Func<CancellationToken, ValueTask<T>> factory)
     {
@@ -24,7 +25,7 @@ public sealed class SignalIsland<T>
             throw new ArgumentNullException(nameof(factory));
 
         _factory = factory;
-        _context = SingleThreadedSynchronizationContext.Create(OnUnhandledError);
+        Context = SingleThreadedSynchronizationContext.Create(OnUnhandledError);
     }
 
     public ValueTask InvokeAsync(Func<T, ValueTask> action, CancellationToken cancellationToken = default)
@@ -60,16 +61,16 @@ public sealed class SignalIsland<T>
     }
 
     ValueTask InvokeCoreAsync(Func<T, ValueTask> action, CancellationToken cancellationToken) =>
-        _context.InvokeAsync(async token => await action(await ValueAsync(token)), cancellationToken);
+        Context.InvokeAsync(async token => await action(await ValueAsync(token)), cancellationToken);
 
     ValueTask InvokeCoreAsync(Action<T> action, CancellationToken cancellationToken) =>
-        _context.InvokeAsync(async token => action(await ValueAsync(token)), cancellationToken);
+        Context.InvokeAsync(async token => action(await ValueAsync(token)), cancellationToken);
 
     ValueTask<TResult> InvokeCoreAsync<TResult>(Func<T, ValueTask<TResult>> action, CancellationToken cancellationToken) =>
-        _context.InvokeAsync(async token => await action(await ValueAsync(token)), cancellationToken);
+        Context.InvokeAsync(async token => await action(await ValueAsync(token)), cancellationToken);
 
     ValueTask<TResult> InvokeCoreAsync<TResult>(Func<T, TResult> action, CancellationToken cancellationToken) =>
-        _context.InvokeAsync(async token => action(await ValueAsync(token)), cancellationToken);
+        Context.InvokeAsync(async token => action(await ValueAsync(token)), cancellationToken);
 
     public IAwaitable<T> SwitchToIslandContextAsync(CancellationToken cancellationToken = default) =>
         new IslandContextAwaitable(this, cancellationToken);
@@ -95,7 +96,7 @@ public sealed class SignalIsland<T>
         {
             get
             {
-                if (SynchronizationContext.Current != _island._context || _cancellationToken.IsCancellationRequested)
+                if (SynchronizationContext.Current != _island.Context || _cancellationToken.IsCancellationRequested)
                     return false;
 
                 if (_resolved is not null)
@@ -113,7 +114,7 @@ public sealed class SignalIsland<T>
 
         public void OnCompleted(Action continuation)
         {
-            _island._context.Post(async void (_) =>
+            _island.Context.Post(async void (_) =>
             {
                 try
                 {

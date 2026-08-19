@@ -65,6 +65,141 @@ public class SelectionQueryParseTests
         SelectionQuery.Parse($"{{ {name} }}")[0].Name.ShouldBe(name);
     }
 
+    [Fact]
+    public void NoArgumentList_IsNotACall()
+    {
+        SelectionQuery.Parse("{ Name }")[0].IsCall.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ArgumentList_MarksTheFieldAsACall()
+    {
+        var field = SelectionQuery.Parse("{ Sensor(index: 0) }")[0];
+
+        field.Name.ShouldBe("Sensor");
+        field.IsCall.ShouldBeTrue();
+        field.ArgumentsOrEmpty.Select(x => x.Name).ShouldBe(["index"]);
+        field.ArgumentsOrEmpty[0].Value.ShouldBe(0L);
+    }
+
+    [Fact]
+    public void CallWithSelectionSet_KeepsBoth()
+    {
+        var field = SelectionQuery.Parse("{ Sensor(index: 1) { Name Kind } }")[0];
+
+        field.ArgumentsOrEmpty.Count.ShouldBe(1);
+        field.Children.Select(x => x.Name).ShouldBe(["Name", "Kind"]);
+    }
+
+    [Theory]
+    [InlineData("{ f(a: 1) }", 1L)]
+    [InlineData("{ f(a: -3) }", -3L)]
+    [InlineData("{ f(a: 1.5) }", 1.5)]
+    [InlineData("{ f(a: -0.25) }", -0.25)]
+    [InlineData("{ f(a: 1e2) }", 100d)]
+    [InlineData("{ f(a: true) }", true)]
+    [InlineData("{ f(a: false) }", false)]
+    [InlineData("{ f(a: null) }", null)]
+    [InlineData("""{ f(a: "hi") }""", "hi")]
+    public void ArgumentLiterals_ParseToClrValues(string query, object? expected)
+    {
+        SelectionQuery.Parse(query)[0].ArgumentsOrEmpty[0].Value.ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData(@"""a\tb""", "a\tb")]
+    [InlineData(@"""a\nb""", "a\nb")]
+    [InlineData(@"""a\""b""", "a\"b")]
+    [InlineData(@"""a\\b""", @"a\b")]
+    [InlineData(@"""A""", "A")]
+    public void StringArgument_UnescapesSequences(string literal, string expected)
+    {
+        SelectionQuery.Parse($"{{ f(a: {literal}) }}")[0].ArgumentsOrEmpty[0].Value.ShouldBe(expected);
+    }
+
+    [Fact]
+    public void MultipleArguments_AreParsedInOrder()
+    {
+        var arguments = SelectionQuery.Parse("""{ f(a: 1, b: "two", c: true) }""")[0].ArgumentsOrEmpty;
+
+        arguments.Select(x => x.Name).ShouldBe(["a", "b", "c"]);
+        arguments.Select(x => x.Value).ShouldBe([1L, "two", true]);
+    }
+
+    [Fact]
+    public void ArgumentSeparators_AreInterchangeable()
+    {
+        SelectionQuery.Parse("{ f(a: 1, b: 2) }").ShouldBe(SelectionQuery.Parse("{ f(a: 1 b: 2) }"));
+    }
+
+    [Fact]
+    public void Alias_RenamesTheOutputKey()
+    {
+        var field = SelectionQuery.Parse("{ first: Sensor(index: 0) }")[0];
+
+        field.Alias.ShouldBe("first");
+        field.Name.ShouldBe("Sensor");
+        field.Key.ShouldBe("first");
+    }
+
+    [Fact]
+    public void WithoutAlias_TheKeyIsTheName()
+    {
+        SelectionQuery.Parse("{ Name }")[0].Key.ShouldBe("Name");
+    }
+
+    [Fact]
+    public void Alias_WorksWithoutArguments()
+    {
+        var field = SelectionQuery.Parse("{ label: Name }")[0];
+
+        field.Alias.ShouldBe("label");
+        field.Name.ShouldBe("Name");
+        field.IsCall.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void QueriesDifferingOnlyByArgumentValue_AreNotEqual()
+    {
+        SelectionQuery.Parse("{ f(a: 1) }").ShouldNotBe(SelectionQuery.Parse("{ f(a: 2) }"));
+    }
+
+    [Fact]
+    public void QueriesDifferingOnlyByAlias_AreNotEqual()
+    {
+        SelectionQuery.Parse("{ x: f }").ShouldNotBe(SelectionQuery.Parse("{ y: f }"));
+    }
+
+    [Fact]
+    public void IdenticalCalls_AreEqualAndShareAHashCode()
+    {
+        var left = SelectionQuery.Parse("""{ a: f(x: 1, y: "s") { b } }""");
+        var right = SelectionQuery.Parse("""{ a: f(x: 1, y: "s") { b } }""");
+
+        left.ShouldBe(right);
+        left.Select(x => x.GetHashCode()).ShouldBe(right.Select(x => x.GetHashCode()));
+    }
+
+    [Theory]
+    [InlineData("{ f() }")]
+    [InlineData("{ f(a) }")]
+    [InlineData("{ f(a:) }")]
+    [InlineData("{ f(: 1) }")]
+    [InlineData("{ f(a: 1 }")]
+    [InlineData("{ f(a: 1))}")]
+    [InlineData("{ f(a: 1, a: 2) }")]
+    [InlineData("{ f(a: bad) }")]
+    [InlineData("""{ f(a: "unterminated) }""")]
+    [InlineData("{ f(a: 1.) }")]
+    [InlineData("{ f(a: .5) }")]
+    [InlineData("{ f(a: 1e) }")]
+    [InlineData("{ : f }")]
+    [InlineData("{ a: }")]
+    public void MalformedCalls_Throw(string query)
+    {
+        Should.Throw<FormatException>(() => SelectionQuery.Parse(query));
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
