@@ -73,7 +73,7 @@ public class ToQuerySelectorTests
 
     static readonly JsonSerializerOptions PascalCase = new();
 
-    static Func<Employee, object?> Compile(SignalsQuery query, JsonSerializerOptions? options = null) =>
+    static Func<Employee, object?> Compile(SignalComputedQuery query, JsonSerializerOptions? options = null) =>
         query.ToQuerySelector<Employee>(options);
 
     static string Json(object? value) => JsonSerializer.Serialize(value, SignalsQueryExtensions.DefaultJsonOptions);

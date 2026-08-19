@@ -27,12 +27,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13
 .brand-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px 1px rgba(62,207,142,.7)}
 .brand-name{font-family:var(--sans);font-weight:500;font-size:13.5px;letter-spacing:-.01em}
 .brand-name span{color:var(--dim)}
-.url{display:flex;align-items:center;flex:1;min-width:0;max-width:640px;height:30px;border:1px solid var(--line-strong);border-radius:8px;background:var(--bg-input);overflow:hidden}
+.url{display:flex;align-items:center;flex:1;min-width:0;max-width:720px;gap:0;height:30px;border:1px solid var(--line-strong);border-radius:8px;background:var(--bg-input);overflow:hidden}
 .url-verb{flex:none;padding:0 9px;font-size:10px;letter-spacing:.09em;color:var(--accent);border-right:1px solid rgba(214,224,217,.1);line-height:28px}
-.url-select{flex:none;max-width:190px;height:100%;padding:0 8px;font-family:var(--mono);font-size:12px;color:var(--accent-pale);background:rgba(62,207,142,.08);border:0;border-right:1px solid rgba(214,224,217,.1);outline:0;cursor:pointer}
+.url-select{flex:0 1 auto;min-width:74px;max-width:190px;height:100%;padding:0 8px;font-family:var(--mono);font-size:12px;color:var(--accent-pale);background:rgba(62,207,142,.08);border:0;border-right:1px solid rgba(214,224,217,.1);outline:0;cursor:pointer;text-overflow:ellipsis}
 .url-select:hover{background:rgba(62,207,142,.14)}
 .url-select option{background:#101211;color:var(--text)}
-.url-path{flex:1;min-width:0;padding:0 10px;font-size:12.5px;color:var(--text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.url-path{flex:1 1 0;min-width:40px;padding:0 10px;font-size:12.5px;color:var(--text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .url-tail{flex:none;padding:0 10px;font-size:11px;color:var(--dimmer)}
 .bar-right{display:flex;align-items:center;gap:8px;margin-left:auto;flex:none}
 .pill{display:flex;align-items:center;gap:6px;padding:0 10px;height:26px;border-radius:99px}
@@ -140,7 +140,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13
       <span class="url-verb">GET</span>
       <select class="url-select" id="islandSelect" aria-label="Signal island"></select>
       <span class="url-path" id="urlPath"></span>
-      <span class="url-tail">?query=…</span>
+      <span class="url-tail" id="url-tail">?query=…</span>
     </div>
     <div class="bar-right" id="barRight"></div>
   </div>
@@ -192,9 +192,12 @@ var urlPathEl=document.getElementById("urlPath");
 var islandSelect=document.getElementById("islandSelect");
 
 function currentEndpoint(){ return island ? island.path : ""; }
+function queryParam(){ return (island && island.queryParameter) || "query"; }
 
 function renderEndpoint(){
   urlPathEl.textContent = island ? new URL(island.path, location.href).href : "no island available";
+  var tail=document.getElementById("url-tail");
+  if(tail) tail.textContent="?"+queryParam()+"=…";
 }
 
 function selectIsland(next){
@@ -642,7 +645,7 @@ function pushEvent(value){
 
 function openStream(){
   var q=editor.value;
-  var url=currentEndpoint()+"?query="+encodeURIComponent(q);
+  var url=currentEndpoint()+"?"+queryParam()+"="+encodeURIComponent(q);
   state.mode="connecting"; state.serverError=null;
   renderBar(); renderEvents();
 
@@ -722,8 +725,10 @@ function showAc(force){
   if(!schema) return;
   var w=currentWord();
   if(!w.text&&!force){ hideAc(); return; }
+  var scope=scopeAt(w.start);
+  if(!scope){ hideAc(); return; }
   var used=usedNames(w);
-  var names=collectNames(schema).filter(function(n){
+  var names=namesIn(scope).filter(function(n){
     var bare=n.split("(")[0];
     if(bare===n && used.indexOf(bare)>=0) return false;
     return w.text ? bare.indexOf(w.text)===0 : true;
@@ -738,30 +743,94 @@ function showAc(force){
   Array.prototype.forEach.call(acBox.children,function(el,i){ el.onmousedown=function(e){ e.preventDefault(); acIndex=i; applyAc(); }; });
 }
 function usedNames(w){
-  var text=editor.value, out=[], p=0;
+  var text=editor.value, out=[], p=blockStart(w?w.start:text.length), depth=0;
   while(p<text.length){
-    if(isNameStart(text[p])){
+    var c=text[p];
+    if(isNameStart(c)){
       var s=p;
       while(p<text.length&&isNamePart(text[p])) p++;
-      if(justApplied||!(w&&s===w.start&&p===w.end)) out.push(text.slice(s,p));
-    } else p++;
+      if(depth===0&&(justApplied||!(w&&s===w.start&&p===w.end))) out.push(text.slice(s,p));
+      continue;
+    }
+    if(c==="("){
+      var d=1; p++;
+      while(p<text.length&&d>0){ if(text[p]==="(") d++; else if(text[p]===")") d--; p++; }
+      continue;
+    }
+    if(c==="{"){ depth++; p++; continue; }
+    if(c==="}"){ if(depth===0) break; depth--; p++; continue; }
+    p++;
   }
   return out;
 }
+
+function blockStart(caret){
+  var text=editor.value, stack=[], p=0;
+  while(p<caret&&p<text.length){
+    var c=text[p];
+    if(c==="("){
+      var d=1; p++;
+      while(p<text.length&&d>0){ if(text[p]==="(") d++; else if(text[p]===")") d--; p++; }
+      continue;
+    }
+    if(c==="{"){ stack.push(p+1); p++; continue; }
+    if(c==="}"){ stack.pop(); p++; continue; }
+    p++;
+  }
+  return stack.length?stack[stack.length-1]:0;
+}
 function argsOf(node){ return node && typeof node==="object" && node.$args ? node.$args : null; }
 
-function collectNames(node){
-  var out=[];
-  (function walk(n){
-    Object.keys(n||{}).forEach(function(k){
-      if(k==="$args"||k==="$fields") return;
-      var child=n[k], args=argsOf(child);
-      out.push(args ? k+"("+args.map(function(a){ return a.name+": "; }).join(", ")+")" : k);
-      if(args) child=child.$fields;
-      if(child&&typeof child==="object") walk(child);
-    });
-  })(node);
-  return out.filter(function(v,i,a){ return a.indexOf(v)===i; });
+function fieldsOf(node){
+  if(!node||typeof node!=="object") return null;
+  var inner=node.$args?node.$fields:node;
+  return inner&&typeof inner==="object"?inner:null;
+}
+
+function pathAtCaret(caret){
+  var text=editor.value, stack=[], pending=null, p=0;
+  while(p<caret&&p<text.length){
+    var c=text[p];
+    if(isNameStart(c)){
+      var s=p;
+      while(p<text.length&&isNamePart(text[p])) p++;
+      pending=text.slice(s,p);
+      continue;
+    }
+    if(c==="("){
+      var depth=1; p++;
+      while(p<text.length&&depth>0){
+        if(text[p]==="(") depth++;
+        else if(text[p]===")") depth--;
+        p++;
+      }
+      continue;
+    }
+    if(c==="{"){ stack.push(pending); pending=null; p++; continue; }
+    if(c==="}"){ stack.pop(); pending=null; p++; continue; }
+    p++;
+  }
+  return stack;
+}
+
+function scopeAt(caret){
+  var node=schema;
+  var path=pathAtCaret(caret);
+  for(var i=0;i<path.length;i++){
+    if(path[i]===null||path[i]===undefined) continue;
+    if(!node||typeof node!=="object") return null;
+    node=fieldsOf(node[path[i]]);
+    if(!node) return null;
+  }
+  return node;
+}
+
+function namesIn(node){
+  if(!node||typeof node!=="object") return [];
+  return Object.keys(node).filter(function(k){ return k!=="$args"&&k!=="$fields"; }).map(function(k){
+    var args=argsOf(node[k]);
+    return args ? k+"("+args.map(function(a){ return a.name+": "; }).join(", ")+")" : k;
+  });
 }
 function applyAc(){
   if(!acItems.length) return;
@@ -824,7 +893,7 @@ document.getElementById("btnFormat").onclick=function(){
   if(f!=null){ editor.value=f; syncEditor(); }
 };
 document.getElementById("btnCopy").onclick=function(){
-  var url=new URL(currentEndpoint(),location.href).href+"?query="+encodeURIComponent(editor.value);
+  var url=new URL(currentEndpoint(),location.href).href+"?"+queryParam()+"="+encodeURIComponent(editor.value);
   navigator.clipboard&&navigator.clipboard.writeText(url);
   var b=document.getElementById("btnCopy"), t=b.textContent;
   b.textContent="copied"; setTimeout(function(){ b.textContent=t; },900);

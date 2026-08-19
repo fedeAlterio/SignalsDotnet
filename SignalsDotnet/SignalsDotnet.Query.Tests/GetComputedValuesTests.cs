@@ -25,7 +25,7 @@ public class GetComputedValuesTests
         var island = NewIsland();
         using var timeout = Timeout();
 
-        await foreach (var value in island.ReadComputedValuesAsync(new SignalsQuery("{ name }"), cancellationToken: timeout.Token))
+        await foreach (var value in island.ReadComputedValuesAsync(new SignalComputedQuery("{ name }"), cancellationToken: timeout.Token))
         {
             Json(value).ShouldBe("""{"name":"Ada"}""");
             break;
@@ -38,7 +38,7 @@ public class GetComputedValuesTests
         var island = NewIsland();
         using var timeout = Timeout();
 
-        var values = island.ReadComputedValuesAsync(new SignalsQuery("{ name }"), cancellationToken: timeout.Token)
+        var values = island.ReadComputedValuesAsync(new SignalComputedQuery("{ name }"), cancellationToken: timeout.Token)
                            .GetAsyncEnumerator(timeout.Token);
 
         try
@@ -63,7 +63,7 @@ public class GetComputedValuesTests
         var island = NewIsland();
         using var timeout = Timeout();
 
-        var values = island.ReadComputedValuesAsync(new SignalsQuery("{ name }"), cancellationToken: timeout.Token)
+        var values = island.ReadComputedValuesAsync(new SignalComputedQuery("{ name }"), cancellationToken: timeout.Token)
                            .GetAsyncEnumerator(timeout.Token);
 
         try
@@ -88,7 +88,7 @@ public class GetComputedValuesTests
         var island = NewIsland();
         using var timeout = Timeout();
 
-        var values = island.ReadComputedValuesAsync(new SignalsQuery("{ name }"), cancellationToken: timeout.Token)
+        var values = island.ReadComputedValuesAsync(new SignalComputedQuery("{ name }"), cancellationToken: timeout.Token)
                            .GetAsyncEnumerator(timeout.Token);
 
         try
@@ -116,7 +116,7 @@ public class GetComputedValuesTests
         var island = NewIsland();
         using var timeout = Timeout();
 
-        var values = island.ReadComputedValuesAsync(new SignalsQuery("{ home { city } }"), cancellationToken: timeout.Token)
+        var values = island.ReadComputedValuesAsync(new SignalComputedQuery("{ home { city } }"), cancellationToken: timeout.Token)
                            .GetAsyncEnumerator(timeout.Token);
 
         try
@@ -142,7 +142,7 @@ public class GetComputedValuesTests
         using var cancellation = new CancellationTokenSource();
         using var timeout = Timeout();
 
-        var values = island.ReadComputedValuesAsync(new SignalsQuery("{ name }"), cancellationToken: cancellation.Token)
+        var values = island.ReadComputedValuesAsync(new SignalComputedQuery("{ name }"), cancellationToken: cancellation.Token)
                            .GetAsyncEnumerator(cancellation.Token);
 
         try
@@ -165,7 +165,7 @@ public class GetComputedValuesTests
         var island = NewIsland();
         using var timeout = Timeout();
 
-        var values = island.ReadComputedValuesAsync(new SignalsQuery("{ name }"), cancellationToken: timeout.Token)
+        var values = island.ReadComputedValuesAsync(new SignalComputedQuery("{ name }"), cancellationToken: timeout.Token)
                            .GetAsyncEnumerator(timeout.Token);
 
         (await values.MoveNextAsync()).ShouldBeTrue();
@@ -191,7 +191,7 @@ public class GetComputedValuesTests
 
         await Should.ThrowAsync<ArgumentNullException>(async () =>
         {
-            await foreach (var _ in ((SignalIsland<Employee>)null!).ReadComputedValuesAsync(new SignalsQuery("{ name }"), cancellationToken: timeout.Token))
+            await foreach (var _ in ((SignalIsland<Employee>)null!).ReadComputedValuesAsync(new SignalComputedQuery("{ name }"), cancellationToken: timeout.Token))
                 break;
         });
     }

@@ -21,15 +21,9 @@ public static class SignalsQueryUiEndpointRouteBuilderExtensions
 
         var discoveryPath = $"{path.TrimEnd('/')}/discovery";
 
-        endpoints.MapGet(discoveryPath, () => Results.Json(new
+        endpoints.MapGet(discoveryPath, (EndpointDataSource endpointDataSource) => Results.Json(new
         {
-            islands = SignalIslandEndpointRegistry.All(endpoints)
-                                                  .Select(x => new
-                                                  {
-                                                      path = x.Path,
-                                                      name = x.IslandType.Name,
-                                                      schema = SchemaBuilder.Build(x.IslandType)
-                                                  })
+            islands = DiscoverIslands(endpointDataSource)
         }, SignalsQueryExtensions.DefaultJsonOptions)).ExcludeFromDescription();
 
         var html = new Lazy<string>(() => BuildHtml(discoveryPath));
@@ -37,6 +31,25 @@ public static class SignalsQueryUiEndpointRouteBuilderExtensions
         return endpoints.MapGet(path, () => Results.Content(html.Value, "text/html; charset=utf-8"))
                         .ExcludeFromDescription();
     }
+
+    static IEnumerable<object> DiscoverIslands(EndpointDataSource endpointDataSource) =>
+        endpointDataSource.Endpoints
+                          .OfType<RouteEndpoint>()
+                          .Select(endpoint => new
+                          {
+                              endpoint,
+                              metadata = SignalIslandMetadata.For(endpoint)
+                          })
+                          .Where(x => x.metadata is not null)
+                          .Select(x => new
+                          {
+                              path = $"/{x.endpoint.RoutePattern.RawText?.TrimStart('/')}",
+                              name = x.metadata!.Name,
+                              queryParameter = x.metadata.QueryParameterName,
+                              schema = SchemaBuilder.Build(x.metadata.IslandType)
+                          })
+                          .DistinctBy(x => x.path)
+                          .OrderBy(x => x.path, StringComparer.Ordinal);
 
     static string BuildHtml(string discoveryPath)
     {

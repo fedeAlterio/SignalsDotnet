@@ -1,38 +1,28 @@
-using System.Text.Json;
+using System.Reflection;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
-using SignalsDotnet.Query;
 
 namespace SignalsDotnet.AspNetCore;
 
 public static class SignalIslandEndpointRouteBuilderExtensions
 {
-    public static RouteHandlerBuilder MapSignalIsland<T>(this IEndpointRouteBuilder endpoints, string path, JsonSerializerOptions? options = null) where T : class
+    public static RouteHandlerBuilder WithSignalIslandDiscovery(this RouteHandlerBuilder builder) =>
+        builder.WithSignalIslandDiscovery(static _ => { });
+
+    public static RouteHandlerBuilder WithSignalIslandDiscovery(this RouteHandlerBuilder builder,
+                                                                Action<SignalIslandDiscoveryOptions> configure)
     {
-        ArgumentNullException.ThrowIfNull(endpoints);
-        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(configure);
 
-        SignalIslandEndpointRegistry.Add(endpoints, path, typeof(T));
+        var options = new SignalIslandDiscoveryOptions();
+        configure(options);
 
-        return endpoints.MapGet(path, (SignalIsland<T> island, string? query, CancellationToken cancellationToken) =>
+        builder.Add(endpoint =>
         {
-            if (string.IsNullOrWhiteSpace(query))
-                return Results.BadRequest(new { error = "A 'query' parameter is required." });
-
-            if (!SignalsQuery.TryParse(query, out var selection))
-                return Results.BadRequest(new { error = $"'{query}' is not a valid query." });
-
-            try
-            {
-                selection.ToQuerySelectorExpression<T>(options);
-            }
-            catch (FormatException e)
-            {
-                return Results.BadRequest(new { error = e.Message });
-            }
-
-            return TypedResults.ServerSentEvents(island.ReadComputedValuesAsync(selection, options, cancellationToken));
+            if (SignalIslandMetadata.For(endpoint.Metadata.OfType<MethodInfo>().LastOrDefault(), options) is { } metadata)
+                endpoint.Metadata.Add(metadata);
         });
+
+        return builder;
     }
 }

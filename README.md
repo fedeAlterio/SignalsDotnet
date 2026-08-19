@@ -2,6 +2,8 @@
 
 [![Core NuGet](https://img.shields.io/nuget/v/SignalsDotnet.svg?label=core%20nuget&color=blue)](https://www.nuget.org/packages/SignalsDotnet)
 [![Blazor NuGet](https://img.shields.io/nuget/v/SignalsDotnet.Blazor.svg?label=blazor%20nuget&color=purple)](https://www.nuget.org/packages/SignalsDotnet.Blazor)
+[![Query NuGet](https://img.shields.io/nuget/vpre/SignalsDotnet.Query.svg?label=query%20nuget&color=orange)](https://www.nuget.org/packages/SignalsDotnet.Query)
+[![AspNetCore NuGet](https://img.shields.io/nuget/vpre/SignalsDotnet.AspNetCore.svg?label=aspnetcore%20nuget&color=teal)](https://www.nuget.org/packages/SignalsDotnet.AspNetCore)
 [![License](https://img.shields.io/github/license/fedeAlterio/SignalsDotnet)](LICENSE)
 
 **Fine-grained reactive state for .NET.** Wrap a value in a signal, read it inside a computation, and the computation re-runs by itself whenever that value changes — no manual subscriptions, no `PropertyChanged` plumbing, no dependency lists to keep in sync.
@@ -21,6 +23,12 @@ Console.WriteLine(fullName.Value); // Grace Lovelace
 ```
 
 `fullName` discovered its own dependencies simply by reading them. Nothing declared that it depends on `firstName`.
+
+## Signals on Backend
+
+<img src="./assets/signals-query-ui.gif"/>
+
+Ask for the fields you want with a GraphQL-like syntax, and get a stream that pushes a new projection whenever any signal behind them changes — see [Queries](#queries) for the full walkthrough.
 
 ## In a XAML app
 
@@ -112,8 +120,10 @@ Console.WriteLine(fullName.Value); // Grace Lovelace
   - [1. Model the dashboard](#1-model-the-dashboard)
   - [2. Register it as a SignalIsland](#2-register-it-as-a-signalisland)
   - [3. Stream it as server-sent events](#3-stream-it-as-server-sent-events)
-  - [4. Consume it from a client](#4-consume-it-from-a-client)
+  - [4. Explore it in the browser](#4-explore-it-in-the-browser)
+  - [5. Consume it from a client](#5-consume-it-from-a-client)
   - [Query Syntax](#query-syntax)
+  - [Calling Methods](#calling-methods)
   - [A note on threading](#a-note-on-threading)
 
 ---
@@ -939,9 +949,9 @@ This Blazor signal integration is inspired by **Steven Giesel**'s excellent blog
 
 > **Alpha.** `SignalsDotnet.Query` and `SignalsDotnet.AspNetCore` ship as prerelease packages; the API may still change.
 
-A client asks for the fields it wants with a GraphQL-like string, and gets a stream that pushes a new projection every time any signal behind those fields changes. Only the selected fields are read, so changes to everything else (including nested models and collection elements) cause no emission.
+A client asks for the fields it wants with a GraphQL-like string, and gets a stream that pushes a new projection every time any signal behind those fields changes. Only the selected fields are read, so changes to everything else (including nested models and collection elements) cause no emission. A query can also [call methods](#calling-methods) with arguments, and their results are tracked the same way.
 
-Install `SignalsDotnet.AspNetCore`; it brings `SignalsDotnet.Query` and `SignalsDotnet` with it. The three steps below build a live dashboard endpoint.
+Install `SignalsDotnet.AspNetCore`; it brings `SignalsDotnet.Query` and `SignalsDotnet` with it. The steps below build a live dashboard endpoint, a browser explorer for it, and a client that consumes it.
 
 ### 1. Model the dashboard
 
@@ -974,8 +984,13 @@ public partial class Dashboard
 
         return online.Length == 0 ? 0 : Math.Round(online.Average(x => x.Reading), 2);
     }
+
+    [SignalQueryable]
+    public Sensor? GetSensorByIndex(int index) => Sensors.Value?.ElementAtOrDefault(index);
 }
 ```
+
+Properties and `[Computed]` members are queryable as fields. A method annotated with `[SignalQueryable]` is callable with arguments — see [Calling Methods](#calling-methods).
 
 ### 2. Register it as a SignalIsland
 
@@ -1001,7 +1016,23 @@ var dashboard = await island.SwitchToIslandContextAsync(cancellationToken);
 
 ### 3. Stream it as server-sent events
 
-Inject the island, parse the client's query, and hand the resulting `IAsyncEnumerable` to `TypedResults.ServerSentEvents`:
+Inject the island and hand the query to `TypedResults.SignalComputed`:
+
+```csharp
+app.MapGet("/api/dashboard/stream", (SignalIsland<Dashboard> island, SignalsQueryString query, CancellationToken cancellationToken) =>
+           TypedResults.SignalComputed(island, query, cancellationToken))
+   .WithSignalIslandDiscovery();
+```
+
+`SignalsQueryString` binds the query from the `query` string parameter, and the endpoint pushes a new projection as server-sent events whenever a selected signal changes. It rejects a missing query, a malformed one, and one naming a field or method that does not exist on `Dashboard`, each with a `400` and a message saying what was wrong — so client mistakes surface as errors rather than as a stream that silently never emits. It takes an optional `JsonSerializerOptions`.
+
+`WithSignalIslandDiscovery` is what makes the endpoint visible to the query explorer below; it infers the island type from the handler's `SignalIsland<T>` parameter, so it works on any handler you write. Leave it off and the endpoint still streams, it just does not show up in the dropdown.
+
+A client subscribing to `/api/dashboard/stream?query={ title onlineCount }` gets an event whenever `Title` or a sensor's `IsOnline` changes, and nothing when an unselected field does.
+
+The projection is yielded immediately, then again on every relevant change, and stops when the request is cancelled. A slow client never blocks the model: the stream is backed by a bounded channel of capacity 1 that drops the oldest value, so it receives the latest state rather than every intermediate one. Serialization follows `SignalsQueryExtensions.DefaultJsonOptions` (web defaults).
+
+For full control over parsing and error shape, go one level down to `ReadComputedValuesAsync`:
 
 ```csharp
 app.MapGet("/api/dashboard/stream", (SignalIsland<Dashboard> island, string? query, CancellationToken token) =>
@@ -1010,14 +1041,35 @@ app.MapGet("/api/dashboard/stream", (SignalIsland<Dashboard> island, string? que
         return Results.BadRequest(new { error = $"'{query}' is not a valid query." });
 
     return TypedResults.ServerSentEvents(island.ReadComputedValuesAsync(selection, cancellationToken: token));
-});
+}).WithSignalIslandDiscovery();
 ```
 
-`ReadComputedValuesAsync` yields the projection immediately, then again on every relevant change, and stops when the request is cancelled. A slow client never blocks the model: the stream is backed by a bounded channel of capacity 1 that drops the oldest value, so it receives the latest state rather than every intermediate one. Serialization follows `SignalsQueryExtensions.DefaultJsonOptions` (web defaults) unless you pass your own `JsonSerializerOptions`.
+### 4. Explore it in the browser
 
-A client subscribing to `/api/dashboard/stream?query={ title onlineCount }` gets an event whenever `Title` or a sensor's `IsOnline` changes, and nothing when an unselected field does.
+`MapSignalsQueryUi` mounts a query explorer, served as a single self-contained page with no external assets:
 
-### 4. Consume it from a client
+```csharp
+app.MapSignalsQueryUi("/signals");
+```
+
+Open `/signals` and you get an editor to write a query against, and a live view of the events coming back. It discovers every island endpoint marked with `WithSignalIslandDiscovery` on the same app, so a dropdown switches between them and the schema drives:
+
+- **autocomplete** (`Ctrl`/`⌘`+`Space`) over fields and queryable methods, inserting a call template with the caret at the first argument
+- **syntax highlighting** of fields, arguments, literals, and braces, with the offending character underlined when a query is malformed
+- **inline validation** as you type, reporting the parse error and its line and column before you ever subscribe
+
+Events stream into the right-hand pane as they arrive, each one inspectable as raw JSON or copyable to the clipboard. If the connection drops, the page reconnects on its own with exponential backoff up to 8 seconds.
+
+Keyboard: `Ctrl`/`⌘`+`Enter` subscribes, `Ctrl`/`⌘`+`.` stops, `Ctrl`/`⌘`+`K` clears the events. `format` reindents the query, and `copy url` yields the full stream URL with the query encoded, ready to paste into a client.
+
+This is a development tool. It exposes the shape of your model, so map it behind whatever authorization your app uses, or only in development:
+
+```csharp
+if (app.Environment.IsDevelopment())
+    app.MapSignalsQueryUi("/signals");
+```
+
+### 5. Consume it from a client
 
 Send the query as a query-string parameter and read the response with `SseParser`. Field names are camelCase, matching the web defaults used to serialize them:
 
@@ -1055,6 +1107,12 @@ A query is a brace-delimited selection set. Fields are separated by whitespace o
 
 Field names follow the `JsonSerializerOptions` in use, so with the web defaults they are camelCase and a PascalCase name is rejected. A bare `title` is shorthand for `{ title }`. Selecting an object without a nested set returns it whole, and applied to a collection a query projects each element.
 
+A field can be given an alias with `alias: field`, which renames it in the output:
+
+```
+{ heading: title online: onlineCount }
+```
+
 ```csharp
 var query = SignalsQuery.Parse("{ title sensors { name } }");
 
@@ -1071,6 +1129,61 @@ A query compiles to an ordinary selector, useful on its own:
 ```csharp
 Func<Dashboard, object?> selector = query.ToQuerySelector<Dashboard>();
 ```
+
+### Calling Methods
+
+A query can call methods, not just read properties. Annotate a method with `[SignalQueryable]` to expose it:
+
+```csharp
+[GenerateSignals]
+public partial class Dashboard
+{
+    [SignalIgnore]
+    public CollectionSignal<ObservableCollection<Sensor>> Sensors { get; } = new();
+
+    [SignalQueryable]
+    public Sensor? GetSensorByIndex(int index) => Sensors.Value?.ElementAtOrDefault(index);
+
+    [SignalQueryable]
+    public IReadOnlyList<Sensor> GetSensorsAbove(double threshold, bool onlineOnly = true) =>
+        Sensors.Value?.Where(x => (!onlineOnly || x.IsOnline) && x.Reading > threshold).ToList() ?? [];
+}
+```
+
+Arguments are named, GraphQL-style, and the result takes a nested selection set like any other field:
+
+```
+{
+    title
+    getSensorByIndex(index: 0) { name reading }
+    getSensorsAbove(threshold: 20) { name }
+}
+```
+
+Calls are tracked like everything else: a method runs inside the projection, so every signal it reads becomes a dependency and the stream pushes a new value whenever one of them changes. A method reading nothing selected elsewhere still re-emits on its own dependencies, and changes to signals it never touches emit nothing.
+
+Opting in is per method. A public method without the attribute is not callable, and querying it reports that it needs annotating. Putting `[SignalQueryable]` on the class instead exposes all of its public methods at once.
+
+Methods are callable at any depth: on nested objects, on each element of a collection, and on the result of another call.
+
+```
+{
+    sensors { name readingIn(unit: "F") }
+    getSensorByIndex(index: 0) { readingIn(unit: "K") }
+}
+```
+
+Argument values may be integers, floating-point numbers, quoted strings, `true`, `false`, and `null`. They convert to the parameter type, so an integer literal binds to a `double` parameter, and strings bind to enums, `Guid`, `TimeSpan`, `DateTime`, and `DateTimeOffset`. Parameters with a default value may be omitted. Overloads resolve by which argument names are supplied.
+
+Because a method name alone is the output key, two calls to the same method need aliases to coexist:
+
+```
+{ c: readingIn(unit: "C") f: readingIn(unit: "F") }
+```
+
+Argument binding is checked when the query is compiled, so an unknown method, a missing required argument, an unknown argument name, or a value of the wrong type throws `FormatException` there rather than mid-stream. An exception thrown by the method body itself surfaces on the stream, so keep queryable methods total — return `null` or an empty sequence rather than throwing.
+
+Methods returning `void`, `Task`, or `ValueTask`, generic method definitions, and methods with `ref`/`out` parameters are never queryable.
 
 ### A note on threading
 

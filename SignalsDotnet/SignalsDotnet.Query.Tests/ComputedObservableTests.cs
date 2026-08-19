@@ -64,7 +64,7 @@ public class ComputedObservableTests
     [Fact]
     public void Subscribing_EmitsTheInitialProjection()
     {
-        using var recorder = new Recorder(new SignalsQuery("{ name }").ComputedObservable(NewEmployee()));
+        using var recorder = new Recorder(new SignalComputedQuery("{ name }").ComputedObservable(NewEmployee()));
 
         recorder.Count.ShouldBe(1);
         recorder.Last.ShouldBe("""{"name":"Ada"}""");
@@ -74,7 +74,7 @@ public class ComputedObservableTests
     public void ChangingASelectedProperty_Emits()
     {
         var employee = NewEmployee();
-        using var recorder = new Recorder(new SignalsQuery("{ name }").ComputedObservable(employee));
+        using var recorder = new Recorder(new SignalComputedQuery("{ name }").ComputedObservable(employee));
 
         employee.Name = "Bob";
 
@@ -86,7 +86,7 @@ public class ComputedObservableTests
     public void ChangingAnUnselectedProperty_DoesNotEmit()
     {
         var employee = NewEmployee();
-        using var recorder = new Recorder(new SignalsQuery("{ name }").ComputedObservable(employee));
+        using var recorder = new Recorder(new SignalComputedQuery("{ name }").ComputedObservable(employee));
 
         employee.Age = 99;
 
@@ -97,7 +97,7 @@ public class ComputedObservableTests
     public void EachSelectedProperty_TriggersItsOwnEmission()
     {
         var employee = NewEmployee();
-        using var recorder = new Recorder(new SignalsQuery("{ name age }").ComputedObservable(employee));
+        using var recorder = new Recorder(new SignalComputedQuery("{ name age }").ComputedObservable(employee));
 
         employee.Name = "Bob";
         employee.Age = 40;
@@ -113,7 +113,7 @@ public class ComputedObservableTests
     public void ChangingANestedSelectedProperty_Emits()
     {
         var employee = NewEmployee();
-        using var recorder = new Recorder(new SignalsQuery("{ home { city } }").ComputedObservable(employee));
+        using var recorder = new Recorder(new SignalComputedQuery("{ home { city } }").ComputedObservable(employee));
 
         employee.Home!.City = "Paris";
 
@@ -125,7 +125,7 @@ public class ComputedObservableTests
     public void ChangingAnUnselectedNestedProperty_DoesNotEmit()
     {
         var employee = NewEmployee();
-        using var recorder = new Recorder(new SignalsQuery("{ home { city } }").ComputedObservable(employee));
+        using var recorder = new Recorder(new SignalComputedQuery("{ home { city } }").ComputedObservable(employee));
 
         employee.Home!.Zip = "75001";
 
@@ -136,7 +136,7 @@ public class ComputedObservableTests
     public void ReplacingANestedModel_Emits()
     {
         var employee = NewEmployee();
-        using var recorder = new Recorder(new SignalsQuery("{ home { city } }").ComputedObservable(employee));
+        using var recorder = new Recorder(new SignalComputedQuery("{ home { city } }").ComputedObservable(employee));
 
         employee.Home = new Address { City = "Rome", Zip = "00100" };
 
@@ -148,7 +148,7 @@ public class ComputedObservableTests
     public void ChangingAPropertyOnAReplacedNestedModel_StillEmits()
     {
         var employee = NewEmployee();
-        using var recorder = new Recorder(new SignalsQuery("{ home { city } }").ComputedObservable(employee));
+        using var recorder = new Recorder(new SignalComputedQuery("{ home { city } }").ComputedObservable(employee));
 
         employee.Home = new Address { City = "Rome", Zip = "00100" };
         employee.Home.City = "Milan";
@@ -163,7 +163,7 @@ public class ComputedObservableTests
         var employee = NewEmployee();
         employee.Home = null;
 
-        using var recorder = new Recorder(new SignalsQuery("{ home { city } }").ComputedObservable(employee));
+        using var recorder = new Recorder(new SignalComputedQuery("{ home { city } }").ComputedObservable(employee));
         recorder.Last.ShouldBe("""{"home":null}""");
 
         employee.Home = new Address { City = "Oslo", Zip = "0150" };
@@ -178,7 +178,7 @@ public class ComputedObservableTests
         var team = new Team { Label = "Core" };
         team.Members.Value = [NewEmployee("Ada"), NewEmployee("Bob")];
 
-        using var recorder = new Recorder(new SignalsQuery("{ members { name } }").ComputedObservable(team));
+        using var recorder = new Recorder(new SignalComputedQuery("{ members { name } }").ComputedObservable(team));
 
         recorder.Last.ShouldBe("""{"members":[{"name":"Ada"},{"name":"Bob"}]}""");
     }
@@ -189,7 +189,7 @@ public class ComputedObservableTests
         var team = new Team { Label = "Core" };
         team.Members.Value = [NewEmployee("Ada")];
 
-        using var recorder = new Recorder(new SignalsQuery("{ members { name } }").ComputedObservable(team));
+        using var recorder = new Recorder(new SignalComputedQuery("{ members { name } }").ComputedObservable(team));
 
         team.Members.Value!.Add(NewEmployee("Bob"));
 
@@ -203,7 +203,7 @@ public class ComputedObservableTests
         var team = new Team { Label = "Core" };
         team.Members.Value = [NewEmployee("Ada"), NewEmployee("Bob")];
 
-        using var recorder = new Recorder(new SignalsQuery("{ members { name } }").ComputedObservable(team));
+        using var recorder = new Recorder(new SignalComputedQuery("{ members { name } }").ComputedObservable(team));
 
         team.Members.Value!.RemoveAt(0);
 
@@ -217,7 +217,7 @@ public class ComputedObservableTests
         var team = new Team { Label = "Core" };
         team.Members.Value = [NewEmployee("Ada")];
 
-        using var recorder = new Recorder(new SignalsQuery("{ members { name } }").ComputedObservable(team));
+        using var recorder = new Recorder(new SignalComputedQuery("{ members { name } }").ComputedObservable(team));
 
         team.Members.Value![0].Name = "Grace";
 
@@ -231,7 +231,7 @@ public class ComputedObservableTests
         var team = new Team { Label = "Core" };
         team.Members.Value = [NewEmployee("Ada")];
 
-        using var recorder = new Recorder(new SignalsQuery("{ members { name } }").ComputedObservable(team));
+        using var recorder = new Recorder(new SignalComputedQuery("{ members { name } }").ComputedObservable(team));
 
         team.Members.Value![0].Age = 77;
 
@@ -244,7 +244,7 @@ public class ComputedObservableTests
         var team = new Team { Label = "Core" };
         team.Members.Value = [NewEmployee("Ada")];
 
-        using var recorder = new Recorder(new SignalsQuery("{ members { name } }").ComputedObservable(team));
+        using var recorder = new Recorder(new SignalComputedQuery("{ members { name } }").ComputedObservable(team));
 
         team.Members.Value = [NewEmployee("Cy")];
 
@@ -258,7 +258,7 @@ public class ComputedObservableTests
         var team = new Team { Label = "Core" };
         team.ByRole.Add("lead", NewEmployee("Ada"));
 
-        using var recorder = new Recorder(new SignalsQuery("{ byRole { name } }").ComputedObservable(team));
+        using var recorder = new Recorder(new SignalComputedQuery("{ byRole { name } }").ComputedObservable(team));
 
         recorder.Last.ShouldBe("""{"byRole":{"lead":{"name":"Ada"}}}""");
     }
@@ -269,7 +269,7 @@ public class ComputedObservableTests
         var team = new Team { Label = "Core" };
         team.ByRole.Add("lead", NewEmployee("Ada"));
 
-        using var recorder = new Recorder(new SignalsQuery("{ byRole { name } }").ComputedObservable(team));
+        using var recorder = new Recorder(new SignalComputedQuery("{ byRole { name } }").ComputedObservable(team));
 
         team.ByRole.Add("dev", NewEmployee("Bob"));
 
@@ -284,7 +284,7 @@ public class ComputedObservableTests
         team.ByRole.Add("lead", NewEmployee("Ada"));
         team.ByRole.Add("dev", NewEmployee("Bob"));
 
-        using var recorder = new Recorder(new SignalsQuery("{ byRole { name } }").ComputedObservable(team));
+        using var recorder = new Recorder(new SignalComputedQuery("{ byRole { name } }").ComputedObservable(team));
 
         team.ByRole.Remove("lead");
 
@@ -298,7 +298,7 @@ public class ComputedObservableTests
         var team = new Team { Label = "Core" };
         team.ByRole.Add("lead", NewEmployee("Ada"));
 
-        using var recorder = new Recorder(new SignalsQuery("{ byRole { name } }").ComputedObservable(team));
+        using var recorder = new Recorder(new SignalComputedQuery("{ byRole { name } }").ComputedObservable(team));
 
         team.ByRole["lead"] = NewEmployee("Grace");
 
@@ -312,7 +312,7 @@ public class ComputedObservableTests
         var team = new Team { Label = "Core" };
         team.ByRole.Add("lead", NewEmployee("Ada"));
 
-        using var recorder = new Recorder(new SignalsQuery("{ byRole { name } }").ComputedObservable(team));
+        using var recorder = new Recorder(new SignalComputedQuery("{ byRole { name } }").ComputedObservable(team));
 
         team.ByRole["lead"].Name = "Grace";
 
@@ -328,7 +328,7 @@ public class ComputedObservableTests
         team.ByRole.Add("lead", NewEmployee("Bob"));
 
         using var recorder = new Recorder(
-            new SignalsQuery("{ label members { name } byRole { name } }").ComputedObservable(team));
+            new SignalComputedQuery("{ label members { name } byRole { name } }").ComputedObservable(team));
 
         team.Label = "Platform";
         team.Members.Value![0].Name = "Grace";
@@ -342,7 +342,7 @@ public class ComputedObservableTests
     public void UnsubscribingStopsEmissions()
     {
         var employee = NewEmployee();
-        var recorder = new Recorder(new SignalsQuery("{ name }").ComputedObservable(employee));
+        var recorder = new Recorder(new SignalComputedQuery("{ name }").ComputedObservable(employee));
 
         employee.Name = "Bob";
         recorder.Dispose();
@@ -355,8 +355,8 @@ public class ComputedObservableTests
     public void TwoSubscribersToTheSameQuery_BothReceiveEmissions()
     {
         var employee = NewEmployee();
-        using var first = new Recorder(new SignalsQuery("{ name }").ComputedObservable(employee));
-        using var second = new Recorder(new SignalsQuery("{ name }").ComputedObservable(employee));
+        using var first = new Recorder(new SignalComputedQuery("{ name }").ComputedObservable(employee));
+        using var second = new Recorder(new SignalComputedQuery("{ name }").ComputedObservable(employee));
 
         employee.Name = "Bob";
 
@@ -367,7 +367,7 @@ public class ComputedObservableTests
     [Fact]
     public void AQuery_IsReusableAcrossSources()
     {
-        var query = new SignalsQuery("{ name }");
+        var query = new SignalComputedQuery("{ name }");
 
         using var first = new Recorder(query.ComputedObservable(NewEmployee("Ada")));
         using var second = new Recorder(query.ComputedObservable(NewEmployee("Bob")));
@@ -379,7 +379,7 @@ public class ComputedObservableTests
     [Fact]
     public void CallingAMethod_EmitsTheInitialResult()
     {
-        using var recorder = new Recorder(new SignalsQuery("""{ greet(prefix: "Hi ") }""").ComputedObservable(NewEmployee()));
+        using var recorder = new Recorder(new SignalComputedQuery("""{ greet(prefix: "Hi ") }""").ComputedObservable(NewEmployee()));
 
         recorder.Count.ShouldBe(1);
         recorder.Last.ShouldBe("""{"greet":"Hi Ada"}""");
@@ -389,7 +389,7 @@ public class ComputedObservableTests
     public void ChangingASignalReadByACalledMethod_Emits()
     {
         var employee = NewEmployee();
-        using var recorder = new Recorder(new SignalsQuery("""{ greet(prefix: "Hi ") }""").ComputedObservable(employee));
+        using var recorder = new Recorder(new SignalComputedQuery("""{ greet(prefix: "Hi ") }""").ComputedObservable(employee));
 
         employee.Name = "Bob";
 
@@ -401,7 +401,7 @@ public class ComputedObservableTests
     public void ChangingASignalNotReadByACalledMethod_DoesNotEmit()
     {
         var employee = NewEmployee();
-        using var recorder = new Recorder(new SignalsQuery("""{ greet(prefix: "Hi ") }""").ComputedObservable(employee));
+        using var recorder = new Recorder(new SignalComputedQuery("""{ greet(prefix: "Hi ") }""").ComputedObservable(employee));
 
         employee.Age = 50;
 
@@ -412,7 +412,7 @@ public class ComputedObservableTests
     public void AliasedCallsToTheSameMethod_TrackTheirOwnArguments()
     {
         var employee = NewEmployee();
-        using var recorder = new Recorder(new SignalsQuery("{ now: ageIn(years: 0) later: ageIn(years: 10) }").ComputedObservable(employee));
+        using var recorder = new Recorder(new SignalComputedQuery("{ now: ageIn(years: 0) later: ageIn(years: 10) }").ComputedObservable(employee));
 
         recorder.Last.ShouldBe("""{"now":36,"later":46}""");
 

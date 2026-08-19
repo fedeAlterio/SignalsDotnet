@@ -10,7 +10,7 @@ public static class SignalsQueryExtensions
 {
     public static JsonSerializerOptions DefaultJsonOptions { get; set; } = new(JsonSerializerDefaults.Web);
 
-    public static Expression<Func<T, object?>> ToQuerySelectorExpression<T>(this SignalsQuery query, JsonSerializerOptions? options = null)
+    public static Expression<Func<T, object?>> ToQuerySelectorExpression<T>(this SignalComputedQuery query, JsonSerializerOptions? options = null)
     {
         if (query is null)
             throw new ArgumentNullException(nameof(query));
@@ -21,7 +21,7 @@ public static class SignalsQueryExtensions
         return Expression.Lambda<Func<T, object?>>(Expression.Convert(body, typeof(object)), parameter);
     }
 
-    public static Func<T, object?> ToQuerySelector<T>(this SignalsQuery query, JsonSerializerOptions? options = null) =>
+    public static Func<T, object?> ToQuerySelector<T>(this SignalComputedQuery query, JsonSerializerOptions? options = null) =>
         query.ToQuerySelectorExpression<T>(options).Compile();
 
     public static IEnumerable<MethodInfo> GetQueryableMethods(Type type)
@@ -32,7 +32,7 @@ public static class SignalsQueryExtensions
         return ProjectionBuilder.GetQueryableMethods(type);
     }
 
-    public static Observable<object?> ComputedObservable<T>(this SignalsQuery query, T source, JsonSerializerOptions? options = null)
+    public static Observable<object?> ComputedObservable<T>(this SignalComputedQuery query, T source, JsonSerializerOptions? options = null)
     {
         var selector = query.ToQuerySelector<T>(options);
 
