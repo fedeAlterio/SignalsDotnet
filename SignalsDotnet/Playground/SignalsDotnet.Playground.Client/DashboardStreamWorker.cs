@@ -9,7 +9,12 @@ sealed class DashboardStreamWorker(DashboardStreamReader reader, ILogger<Dashboa
     {
         var query = """
             {
-                fullName
+                title
+                status
+                onlineCount
+                sensorCount
+                average
+                summary
             }
             """;
 
