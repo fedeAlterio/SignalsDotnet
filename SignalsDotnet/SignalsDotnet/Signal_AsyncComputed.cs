@@ -36,6 +36,12 @@ public static partial class Signal
 
 
     public static Observable<T> AsyncComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func,
+                                                           ConcurrentChangeStrategy concurrentChangeStrategy = default)
+    {
+        return ComputedObservable(func, static () => Optional<T>.Empty, concurrentChangeStrategy: concurrentChangeStrategy);
+    }
+
+    public static Observable<T> AsyncComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func,
                                                            T startValue,
                                                            Func<Optional<T>> fallbackValue,
                                                            ConcurrentChangeStrategy concurrentChangeStrategy = default)

@@ -69,12 +69,30 @@ public class ToQuerySelectorTests
         }
 
         public Task<int> Async() => Task.FromResult(1);
+
+        [SignalQueryable]
+        public Task<string> GreetAsync(string prefix) => Task.FromResult($"{prefix}{Name}");
+
+        [SignalQueryable]
+        public ValueTask<int> AgeInAsync(int years) => new(Age + years);
+
+        [SignalQueryable]
+        public ValueTask<Address?> HomeAsync() => new(Home);
+
+        [SignalQueryable]
+        public Task<List<Address>> SitesAsync() => Task.FromResult(Sites);
+
+        [SignalQueryable]
+        public Task NothingAsync() => Task.CompletedTask;
     }
 
     static readonly JsonSerializerOptions PascalCase = new();
 
     static Func<Employee, object?> Compile(SignalComputedQuery query, JsonSerializerOptions? options = null) =>
         query.ToQuerySelector<Employee>(options);
+
+    static Func<Employee, ValueTask<object?>> CompileAsync(SignalComputedQuery query, JsonSerializerOptions? options = null) =>
+        query.ToAsyncQuerySelector<Employee>(options);
 
     static string Json(object? value) => JsonSerializer.Serialize(value, SignalsQueryExtensions.DefaultJsonOptions);
 
@@ -397,9 +415,90 @@ public class ToQuerySelectorTests
     }
 
     [Fact]
-    public void AsyncMethod_IsNotCallable()
+    public void UnannotatedAsyncMethod_IsNotCallable()
     {
         Should.Throw<FormatException>(() => Compile("{ async }"));
+    }
+
+    [Fact]
+    public void ValuelessAsyncMethod_IsNotCallable()
+    {
+        Should.Throw<FormatException>(() => Compile("{ nothingAsync }"));
+    }
+
+    [Fact]
+    public void AsyncMethod_MakesTheQueryAsync()
+    {
+        new SignalComputedQuery("{ greetAsync(prefix: \"Hi \") }").IsAsync<Employee>().ShouldBeTrue();
+        new SignalComputedQuery("{ name }").IsAsync<Employee>().ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task SyncQuery_CompiledAsAsync_StillProjects()
+    {
+        Json(await CompileAsync("{ name }")(new Employee())).ShouldBe("""{"name":"Ada"}""");
+    }
+
+    [Fact]
+    public async Task AsyncMethod_IsAwaited()
+    {
+        var f = CompileAsync("{ name greetAsync(prefix: \"Hi \") }");
+
+        Json(await f(new Employee())).ShouldBe("""{"name":"Ada","greetAsync":"Hi Ada"}""");
+    }
+
+    [Fact]
+    public async Task AsyncValueTaskMethod_IsAwaited()
+    {
+        var f = CompileAsync("{ ageInAsync(years: 4) }");
+
+        Json(await f(new Employee())).ShouldBe("""{"ageInAsync":40}""");
+    }
+
+    [Fact]
+    public async Task AsyncMethod_WithSelectionSet_ProjectsTheAwaitedValue()
+    {
+        var f = CompileAsync("{ homeAsync { city } }");
+
+        Json(await f(new Employee())).ShouldBe("""{"homeAsync":{"city":"London"}}""");
+    }
+
+    [Fact]
+    public async Task AsyncMethod_ReturningNull_ProjectsNull()
+    {
+        var f = CompileAsync("{ homeAsync { city } }");
+
+        Json(await f(new Employee { Home = null })).ShouldBe("""{"homeAsync":null}""");
+    }
+
+    [Fact]
+    public async Task AsyncMethod_ReturningASequence_ProjectsEachElement()
+    {
+        var f = CompileAsync("{ sitesAsync { city } }");
+
+        Json(await f(new Employee())).ShouldBe("""{"sitesAsync":[{"city":"London"},{"city":"Paris"}]}""");
+    }
+
+    [Fact]
+    public async Task AsyncMethod_NestedInASequence_IsAwaitedPerElement()
+    {
+        var f = CompileAsync("{ sites { format(separator: \"-\") } }");
+
+        Json(await f(new Employee())).ShouldBe("""{"sites":[{"format":"London-E1"},{"format":"Paris-75"}]}""");
+    }
+
+    [Fact]
+    public async Task AsyncMethod_UnderAnAsyncParent_IsAwaited()
+    {
+        var f = CompileAsync("{ homeAsync { format(separator: \"/\") } }");
+
+        Json(await f(new Employee())).ShouldBe("""{"homeAsync":{"format":"London/E1"}}""");
+    }
+
+    [Fact]
+    public void AsyncQuery_CompiledSynchronously_Throws()
+    {
+        Should.Throw<FormatException>(() => Compile("{ greetAsync(prefix: \"Hi \") }"));
     }
 
     [Fact]

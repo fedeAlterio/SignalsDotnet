@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
@@ -143,6 +143,10 @@ static class SchemaBuilder
     {
         if (Nullable.GetUnderlyingType(type) is { } underlying)
             type = underlying;
+
+        if (type.IsGenericType && type.GetGenericTypeDefinition() is var definition
+         && (definition == typeof(Task<>) || definition == typeof(ValueTask<>)))
+            return Unwrap(type.GetGenericArguments()[0]);
 
         var signal = type.GetInterfaces()
                          .Concat([type])

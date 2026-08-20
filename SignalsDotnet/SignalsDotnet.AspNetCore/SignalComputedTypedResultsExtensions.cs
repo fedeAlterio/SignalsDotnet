@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Http;
 using SignalsDotnet.Query;
 
 namespace SignalsDotnet.AspNetCore;
@@ -16,7 +16,7 @@ public static class SignalComputedTypedResultsExtensions
 
             try
             {
-                query.ToQuerySelectorExpression<T>();
+                query.ToAsyncQuerySelectorExpression<T>();
             }
             catch (FormatException e)
             {

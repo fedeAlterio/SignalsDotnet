@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using SignalsDotnet;
 using SignalsDotnet.Query;
 
@@ -20,6 +20,14 @@ public partial class Dashboard
     [SignalQueryable]
     public IReadOnlyList<Sensor> GetSensorsAbove(double threshold, bool onlineOnly = true) =>
         Sensors.Value?.Where(x => (!onlineOnly || x.IsOnline) && x.Reading > threshold).ToList() ?? [];
+
+    [SignalQueryable]
+    public async ValueTask<IReadOnlyList<Sensor>> GetSensorsRankedAsync(int take = 3)
+    {
+        await Task.Delay(3000);
+
+        return Sensors.Value?.Where(x => x.IsOnline).OrderByDescending(x => x.Reading).Take(take).ToList() ?? [];
+    }
 
     [SignalQueryable]
     public Sensor? FindSensor(string name) =>

@@ -29,6 +29,12 @@ public partial class Employee
 
     [SignalQueryable]
     public int AgeIn(int years) => Age + years;
+
+    [SignalQueryable]
+    public ValueTask<string> GreetAsync(string prefix) => new($"{prefix}{Name}");
+
+    [SignalQueryable]
+    public Task<Address?> HomeAsync() => Task.FromResult(Home);
 }
 
 [GenerateSignals]
@@ -68,6 +74,43 @@ public class ComputedObservableTests
 
         recorder.Count.ShouldBe(1);
         recorder.Last.ShouldBe("""{"name":"Ada"}""");
+    }
+
+    [Fact]
+    public void AsyncQuery_EmitsTheInitialProjection()
+    {
+        using var recorder = new Recorder(new SignalComputedQuery("{ greetAsync(prefix: \"Hi \") }").ComputedObservable(NewEmployee()));
+
+        recorder.Count.ShouldBe(1);
+        recorder.Last.ShouldBe("""{"greetAsync":"Hi Ada"}""");
+    }
+
+    [Fact]
+    public void AsyncQuery_ReactsToTheSignalsReadInsideTheAsyncMethod()
+    {
+        var employee = NewEmployee();
+        using var recorder = new Recorder(new SignalComputedQuery("{ greetAsync(prefix: \"Hi \") }").ComputedObservable(employee));
+
+        employee.Name = "Bob";
+
+        recorder.Emissions.ShouldBe([
+            """{"greetAsync":"Hi Ada"}""",
+            """{"greetAsync":"Hi Bob"}"""
+        ]);
+    }
+
+    [Fact]
+    public void AsyncQuery_WithSelectionSet_ProjectsAndReacts()
+    {
+        var employee = NewEmployee();
+        using var recorder = new Recorder(new SignalComputedQuery("{ homeAsync { city } }").ComputedObservable(employee));
+
+        employee.Home!.City = "Paris";
+
+        recorder.Emissions.ShouldBe([
+            """{"homeAsync":{"city":"London"}}""",
+            """{"homeAsync":{"city":"Paris"}}"""
+        ]);
     }
 
     [Fact]

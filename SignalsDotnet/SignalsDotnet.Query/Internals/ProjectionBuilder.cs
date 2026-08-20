@@ -13,47 +13,143 @@ static class ProjectionBuilder
 {
     internal static Expression BuildProjection(Expression source, IReadOnlyList<SelectionField> fields, JsonSerializerOptions options)
     {
-        source = Unwrap(source);
+        var node = Build(source, fields, options);
+
+        if (node.IsAsync)
+            throw new FormatException("The query awaits an asynchronous member and cannot be projected synchronously.");
+
+        return node.Expression;
+    }
+
+    internal static bool IsAsyncProjection(Type type, IReadOnlyList<SelectionField> fields, JsonSerializerOptions options) =>
+        Build(Expression.Parameter(type, "source"), fields, options).IsAsync;
+
+    internal static Expression BuildAsyncProjection(Expression source, IReadOnlyList<SelectionField> fields, JsonSerializerOptions options)
+    {
+        var node = Build(source, fields, options);
+
+        return node.IsAsync
+            ? Cast(node.Expression, typeof(ValueTask<object?>))
+            : Expression.Call(ProjectionAsync.FromResultMethod.MakeGenericMethod(typeof(object)), Box(node.Expression));
+    }
+
+    readonly struct Node(Expression expression, bool isAsync)
+    {
+        public Expression Expression { get; } = expression;
+        public bool IsAsync { get; } = isAsync;
+
+        public Type ValueType => IsAsync ? Expression.Type.GetGenericArguments()[0] : Expression.Type;
+
+        public static Node Sync(Expression expression) => new(expression, false);
+        public static Node Async(Expression expression) => new(expression, true);
+    }
+
+    static Node Build(Expression source, IReadOnlyList<SelectionField> fields, JsonSerializerOptions options) =>
+        Build(Node.Sync(source), fields, options);
+
+    static Node Build(Node source, IReadOnlyList<SelectionField> fields, JsonSerializerOptions options)
+    {
+        if (source.IsAsync)
+        {
+            var awaited = Expression.Parameter(source.ValueType, "awaited");
+            var inner = Build(Node.Sync(awaited), fields, options);
+
+            return Node.Async(Continue(source.Expression, inner, awaited));
+        }
+
+        var value = Unwrap(source.Expression);
 
         if (fields.Count == 0)
-            return source;
+            return Node.Sync(value);
 
-        if (TryGetDictionaryValueType(source.Type, out var keyType, out var valueType))
-            return BuildDictionaryProjection(source, keyType, valueType, fields, options);
+        if (TryGetDictionaryValueType(value.Type, out var keyType, out var valueType))
+            return BuildDictionaryProjection(value, keyType, valueType, fields, options);
 
-        if (TryGetEnumerableElementType(source.Type, out var elementType))
-            return BuildSequenceProjection(source, elementType, fields, options);
+        if (TryGetEnumerableElementType(value.Type, out var elementType))
+            return BuildSequenceProjection(value, elementType, fields, options);
 
-        var properties = GetJsonProperties(source.Type, options);
-        var entries = new List<ElementInit>(fields.Count);
-        var add = typeof(Dictionary<string, object?>).GetMethod(nameof(Dictionary<string, object?>.Add))!;
+        var properties = GetJsonProperties(value.Type, options);
+        var children = new List<(string Key, Node Value)>(fields.Count);
 
         foreach (var field in fields)
         {
-            Expression value;
+            Node member;
 
             if (field.IsCall)
-                value = BuildCall(source, field, options);
+                member = BuildCall(value, field, options);
             else if (properties.TryGetValue(field.Name, out var property))
-                value = Expression.Property(source, property);
-            else if (TryFindMethod(source.Type, field, options, out var method))
-                value = BuildCall(source, field, method, options);
+                member = Node.Sync(Expression.Property(value, property));
+            else if (TryFindMethod(value.Type, field, options, out var method))
+                member = BuildCall(value, field, method, options);
             else
-                throw new FormatException(NotFound(source.Type, field, options));
+                throw new FormatException(NotFound(value.Type, field, options));
 
-            var projected = BuildProjection(value, field.Children, options);
-
-            entries.Add(Expression.ElementInit(add, Expression.Constant(field.Key), Box(projected)));
+            children.Add((field.Key, Build(member, field.Children, options)));
         }
 
-        Expression dictionary = Expression.ListInit(Expression.New(typeof(Dictionary<string, object?>)), entries);
+        var nullable = !value.Type.IsValueType || Nullable.GetUnderlyingType(value.Type) is not null;
 
-        return source.Type.IsValueType && Nullable.GetUnderlyingType(source.Type) is null
-            ? dictionary
-            : NullGuard(source, dictionary);
+        if (children.All(x => !x.Value.IsAsync))
+        {
+            var add = typeof(Dictionary<string, object?>).GetMethod(nameof(Dictionary<string, object?>.Add))!;
+            var entries = children.Select(x => Expression.ElementInit(add, Expression.Constant(x.Key), Box(x.Value.Expression)));
+
+            Expression dictionary = Expression.ListInit(Expression.New(typeof(Dictionary<string, object?>)), entries);
+
+            return Node.Sync(nullable ? NullGuard(value, dictionary) : dictionary);
+        }
+
+        var keys = Expression.NewArrayInit(typeof(string), children.Select(x => (Expression)Expression.Constant(x.Key)));
+        var values = Expression.NewArrayInit(typeof(ValueTask<object?>), children.Select(x => AsAsyncObject(x.Value)));
+
+        Expression combined = Expression.Call(ProjectionAsync.WhenAllMethod, keys, values);
+
+        return Node.Async(nullable ? AsyncNullGuard(value, combined) : combined);
     }
 
-    static Expression BuildCall(Expression source, SelectionField field, JsonSerializerOptions options)
+    static Expression Continue(Expression source, Node inner, ParameterExpression awaited)
+    {
+        var sourceType = source.Type.GetGenericArguments()[0];
+
+        if (inner.IsAsync)
+            return Expression.Call(ProjectionAsync.BindMethod.MakeGenericMethod(sourceType, inner.ValueType),
+                                   source,
+                                   Expression.Lambda(typeof(Func<,>).MakeGenericType(sourceType, inner.Expression.Type), inner.Expression, awaited));
+
+        return Expression.Call(ProjectionAsync.MapMethod.MakeGenericMethod(sourceType, inner.ValueType),
+                               source,
+                               Expression.Lambda(typeof(Func<,>).MakeGenericType(sourceType, inner.ValueType), inner.Expression, awaited));
+    }
+
+    static Expression AsAsyncObject(Node node)
+    {
+        if (!node.IsAsync)
+            return Expression.Call(ProjectionAsync.FromResultMethod.MakeGenericMethod(typeof(object)), Box(node.Expression));
+
+        return node.ValueType == typeof(object)
+            ? node.Expression
+            : Expression.Call(ProjectionAsync.MapMethod.MakeGenericMethod(node.ValueType, typeof(object)),
+                              node.Expression,
+                              BoxLambda(node.ValueType));
+    }
+
+    static Expression BoxLambda(Type type)
+    {
+        var value = Expression.Parameter(type, "value");
+
+        return Expression.Lambda(typeof(Func<,>).MakeGenericType(type, typeof(object)), Box(value), value);
+    }
+
+    static Expression Cast(Expression expression, Type type) =>
+        expression.Type == type ? expression : Expression.Convert(expression, type);
+
+    static Expression AsyncNullGuard(Expression source, Expression whenNotNull) =>
+        Expression.Condition(
+            Expression.Equal(source, Expression.Constant(null, source.Type)),
+            Expression.Call(ProjectionAsync.FromResultMethod.MakeGenericMethod(typeof(object)), Expression.Constant(null, typeof(object))),
+            whenNotNull);
+
+    static Node BuildCall(Expression source, SelectionField field, JsonSerializerOptions options)
     {
         if (!TryFindMethod(source.Type, field, options, out var method))
             throw new FormatException(NotFound(source.Type, field, options));
@@ -71,7 +167,7 @@ static class ProjectionBuilder
             : $"'{type.Name}' has no queryable property or method named '{field.Name}'.";
     }
 
-    static Expression BuildCall(Expression source, SelectionField field, MethodInfo method, JsonSerializerOptions options)
+    static Node BuildCall(Expression source, SelectionField field, MethodInfo method, JsonSerializerOptions options)
     {
         var parameters = method.GetParameters();
         var arguments = new Expression[parameters.Length];
@@ -98,7 +194,30 @@ static class ProjectionBuilder
             arguments[i] = Expression.Constant(ConvertArgument(supplied, parameter, field), parameter.ParameterType);
         }
 
-        return Expression.Call(source, method, arguments);
+        Expression call = Expression.Call(source, method, arguments);
+
+        if (TryGetTaskResultType(method.ReturnType, out var result))
+            return Node.Async(method.ReturnType.GetGenericTypeDefinition() == typeof(Task<>)
+                ? Expression.Call(ProjectionAsync.FromTaskMethod.MakeGenericMethod(result), call)
+                : call);
+
+        return Node.Sync(call);
+    }
+
+    internal static bool TryGetTaskResultType(Type type, [NotNullWhen(true)] out Type? result)
+    {
+        result = null;
+
+        if (!type.IsGenericType)
+            return false;
+
+        var definition = type.GetGenericTypeDefinition();
+
+        if (definition != typeof(Task<>) && definition != typeof(ValueTask<>))
+            return false;
+
+        result = type.GetGenericArguments()[0];
+        return true;
     }
 
     static object? ConvertArgument(SelectionArgument argument, ParameterInfo parameter, SelectionField field)
@@ -188,10 +307,8 @@ static class ProjectionBuilder
                                                && method.DeclaringType != typeof(object)
                                                && method.ReturnType != typeof(void)
                                                && !method.GetParameters().Any(p => p.IsOut || p.ParameterType.IsByRef)
-                                               && !typeof(Task).IsAssignableFrom(method.ReturnType)
-                                               && !typeof(ValueTask).IsAssignableFrom(method.ReturnType)
-                                               && !(method.ReturnType.IsGenericType
-                                                 && method.ReturnType.GetGenericTypeDefinition() == typeof(ValueTask<>));
+                                               && method.ReturnType != typeof(Task)
+                                               && method.ReturnType != typeof(ValueTask);
 
     static Expression Unwrap(Expression source)
     {
@@ -204,13 +321,25 @@ static class ProjectionBuilder
         return source;
     }
 
-    static Expression BuildDictionaryProjection(Expression source, Type keyType, Type valueType, IReadOnlyList<SelectionField> fields, JsonSerializerOptions options)
+    static Node BuildDictionaryProjection(Expression source, Type keyType, Type valueType, IReadOnlyList<SelectionField> fields, JsonSerializerOptions options)
     {
         var pairType = typeof(KeyValuePair<,>).MakeGenericType(keyType, valueType);
+        var element = Expression.Parameter(valueType, "value");
+        var projected = Build(element, fields, options);
+
+        if (projected.IsAsync)
+        {
+            var selector = Expression.Lambda(typeof(Func<,>).MakeGenericType(valueType, typeof(ValueTask<object?>)), AsAsyncObject(projected), element);
+
+            return Node.Async(Expression.Call(ProjectionAsync.DictionaryMethod.MakeGenericMethod(keyType, valueType),
+                                              Cast(source, typeof(IEnumerable<>).MakeGenericType(pairType)),
+                                              selector));
+        }
+
         var pair = Expression.Parameter(pairType, "pair");
 
         var key = Expression.Call(Expression.Property(pair, nameof(KeyValuePair<int, int>.Key)), typeof(object).GetMethod(nameof(ToString))!);
-        var value = Box(BuildProjection(Expression.Property(pair, nameof(KeyValuePair<int, int>.Value)), fields, options));
+        var value = Box(new ExpressionReplacer(element, Expression.Property(pair, nameof(KeyValuePair<int, int>.Value))).Visit(projected.Expression)!);
 
         var toDictionary = typeof(Enumerable).GetMethods(BindingFlags.Public | BindingFlags.Static)
                                              .First(m => m.Name == nameof(Enumerable.ToDictionary)
@@ -218,14 +347,19 @@ static class ProjectionBuilder
                                                       && m.GetParameters().Length == 4)
                                              .MakeGenericMethod(pairType, typeof(string), typeof(object));
 
-        var projected = Expression.Call(
+        var dictionary = Expression.Call(
             toDictionary,
             source,
             Expression.Lambda(key, pair),
             Expression.Lambda(value, pair),
             Expression.Constant(null, typeof(IEqualityComparer<string>)));
 
-        return NullGuard(source, projected);
+        return Node.Sync(NullGuard(source, dictionary));
+    }
+
+    sealed class ExpressionReplacer(Expression from, Expression to) : ExpressionVisitor
+    {
+        public override Expression? Visit(Expression? node) => node == from ? to : base.Visit(node);
     }
 
     static bool TryGetDictionaryValueType(Type type, out Type keyType, out Type valueType)
@@ -249,10 +383,19 @@ static class ProjectionBuilder
         return true;
     }
 
-    static Expression BuildSequenceProjection(Expression source, Type elementType, IReadOnlyList<SelectionField> fields, JsonSerializerOptions options)
+    static Node BuildSequenceProjection(Expression source, Type elementType, IReadOnlyList<SelectionField> fields, JsonSerializerOptions options)
     {
         var element = Expression.Parameter(elementType, "element");
-        var projected = Box(BuildProjection(element, fields, options));
+        var projected = Build(element, fields, options);
+
+        if (projected.IsAsync)
+        {
+            var asyncSelector = Expression.Lambda(typeof(Func<,>).MakeGenericType(elementType, typeof(ValueTask<object?>)), AsAsyncObject(projected), element);
+
+            return Node.Async(Expression.Call(ProjectionAsync.SequenceMethod.MakeGenericMethod(elementType),
+                                              Cast(source, typeof(IEnumerable<>).MakeGenericType(elementType)),
+                                              asyncSelector));
+        }
 
         var select = typeof(Enumerable).GetMethods(BindingFlags.Public | BindingFlags.Static)
                                        .First(m => m.Name == nameof(Enumerable.Select)
@@ -262,10 +405,10 @@ static class ProjectionBuilder
 
         var toList = typeof(Enumerable).GetMethod(nameof(Enumerable.ToList))!.MakeGenericMethod(typeof(object));
 
-        var selector = Expression.Lambda(projected, element);
+        var selector = Expression.Lambda(Box(projected.Expression), element);
         var sequence = Expression.Call(toList, Expression.Call(select, source, selector));
 
-        return NullGuard(source, sequence);
+        return Node.Sync(NullGuard(source, sequence));
     }
 
     static Expression NullGuard(Expression source, Expression whenNotNull) =>
