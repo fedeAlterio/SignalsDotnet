@@ -12,6 +12,24 @@ public class DictionarySignal<TKey, TValue> : IDictionary<TKey, TValue> where TK
     internal readonly Dictionary<TKey, RemoveKeyOnZeroSubscriptionsSignal> KeySignals = new();
     readonly ISignal<Unit> _keysChanged = Signal.CreateEvent();
     readonly ISignal<Unit> _valuesChanged = Signal.CreateEvent();
+    readonly Subject<TKey> _keyAdded = new();
+
+    public Observable<(TKey key, IReadOnlySignal<bool> isInDictionary)> KeyAdded =>
+        _keyAdded.Select(key => (key, KeyPresenceSignal(key)));
+
+    internal IEnumerable<TKey> CurrentKeys => _valuesByKey.Keys;
+
+    internal IReadOnlySignal<bool> KeyPresenceSignal(TKey key)
+    {
+        return Signal.Computed(() =>
+        {
+            if (!_valuesByKey.ContainsKey(key))
+                return false;
+
+            TrackKey(key);
+            return true;
+        });
+    }
 
     public TValue this[TKey key]
     {
@@ -38,6 +56,7 @@ public class DictionarySignal<TKey, TValue> : IDictionary<TKey, TValue> where TK
                 _keysChanged.Invoke();
                 _valuesChanged.Invoke();
                 somethingOnKeyChanged?.Invoke();
+                _keyAdded.OnNext(key);
             }
 #else
             if (_valuesByKey.TryGetValue(key, out var signal))
@@ -52,6 +71,7 @@ public class DictionarySignal<TKey, TValue> : IDictionary<TKey, TValue> where TK
                 _keysChanged.Invoke();
                 _valuesChanged.Invoke();
                 somethingOnKeyChanged?.Invoke();
+                _keyAdded.OnNext(key);
             }
 #endif
         }
@@ -127,6 +147,7 @@ public class DictionarySignal<TKey, TValue> : IDictionary<TKey, TValue> where TK
         keySignal?.Invoke();
         _keysChanged.Invoke();
         _valuesChanged.Invoke();
+        _keyAdded.OnNext(key);
     }
 
     public void Add(KeyValuePair<TKey, TValue> item) => Add(item.Key, item.Value);

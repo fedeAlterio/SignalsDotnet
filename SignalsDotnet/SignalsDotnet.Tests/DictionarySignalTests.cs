@@ -1,4 +1,5 @@
 ﻿using FluentAssertions;
+using R3;
 using SignalsDotnet.Tests.Helpers;
 
 namespace SignalsDotnet.Tests;
@@ -446,7 +447,7 @@ public class DictionarySignalTests
     public async Task Clear_ShouldNotifyAllTrackedKeys()
     {
         await this.SwitchToMainThread();
-        
+
         var dictionary = new DictionarySignal<string, int>();
         dictionary["key1"] = 1;
         dictionary["key2"] = 1;
@@ -460,5 +461,222 @@ public class DictionarySignalTests
         dictionary.Clear();
         computed1.Value.Should().BeFalse();
         computed2.Value.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task KeyAdded_ShouldFireOnIndexerSet_ForNewKey()
+    {
+        await this.SwitchToMainThread();
+        var dictionary = new DictionarySignal<string, int>();
+
+        var addedKeys = new List<string>();
+        dictionary.KeyAdded.Subscribe(x => addedKeys.Add(x.key));
+
+        dictionary["a"] = 1;
+        addedKeys.Should().Equal("a");
+    }
+
+    [Fact]
+    public async Task KeyAdded_ShouldFireOnAddMethod()
+    {
+        await this.SwitchToMainThread();
+        var dictionary = new DictionarySignal<string, int>();
+
+        var addedKeys = new List<string>();
+        dictionary.KeyAdded.Subscribe(x => addedKeys.Add(x.key));
+
+        dictionary.Add("a", 1);
+        addedKeys.Should().Equal("a");
+    }
+
+    [Fact]
+    public async Task KeyAdded_ShouldNotFireWhenSettingExistingKey()
+    {
+        await this.SwitchToMainThread();
+        var dictionary = new DictionarySignal<string, int>();
+        dictionary["a"] = 1;
+
+        var addedKeys = new List<string>();
+        dictionary.KeyAdded.Subscribe(x => addedKeys.Add(x.key));
+
+        dictionary["a"] = 2;
+        addedKeys.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task KeyAdded_ShouldNotFireForKeysAddedBeforeSubscription()
+    {
+        await this.SwitchToMainThread();
+        var dictionary = new DictionarySignal<string, int>();
+        dictionary["a"] = 1;
+
+        var addedKeys = new List<string>();
+        dictionary.KeyAdded.Subscribe(x => addedKeys.Add(x.key));
+
+        addedKeys.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task KeyAdded_Signal_ShouldStartTrueAndBecomeFalseOnRemove()
+    {
+        await this.SwitchToMainThread();
+        var dictionary = new DictionarySignal<string, int>();
+
+        IReadOnlySignal<bool>? isInDictionary = null;
+        dictionary.KeyAdded.Subscribe(x => isInDictionary = x.isInDictionary);
+
+        dictionary["a"] = 1;
+        isInDictionary.Should().NotBeNull();
+
+        var values = new List<bool>();
+        isInDictionary!.Values.Subscribe(values.Add);
+        values.Should().Equal(true);
+
+        dictionary.Remove("a");
+        values.Should().Equal(true, false);
+    }
+
+    [Fact]
+    public async Task KeyAdded_Signal_ShouldBecomeFalseOnClear()
+    {
+        await this.SwitchToMainThread();
+        var dictionary = new DictionarySignal<string, int>();
+
+        IReadOnlySignal<bool>? isInDictionary = null;
+        dictionary.KeyAdded.Subscribe(x => isInDictionary = x.isInDictionary);
+
+        dictionary["a"] = 1;
+
+        var values = new List<bool>();
+        isInDictionary!.Values.Subscribe(values.Add);
+        values.Should().Equal(true);
+
+        dictionary.Clear();
+        values.Should().Equal(true, false);
+    }
+
+    [Fact]
+    public async Task KeyAdded_Signal_ShouldDetachAfterBecomingFalse()
+    {
+        await this.SwitchToMainThread();
+        var dictionary = new DictionarySignal<string, int>();
+
+        IReadOnlySignal<bool>? isInDictionary = null;
+        dictionary.KeyAdded.Subscribe(x => isInDictionary = x.isInDictionary);
+
+        dictionary["a"] = 1;
+
+        var values = new List<bool>();
+        isInDictionary!.Values.Subscribe(values.Add);
+        values.Should().Equal(true);
+
+        dictionary.Remove("a");
+        values.Should().Equal(true, false);
+
+        dictionary["a"] = 2;
+        values.Should().Equal(true, false);
+    }
+
+    [Fact]
+    public async Task KeyAdded_ShouldFireAgainAndTrackIndependently_OnAddRemoveAddRemove()
+    {
+        await this.SwitchToMainThread();
+        var dictionary = new DictionarySignal<string, int>();
+
+        var addedKeys = new List<string>();
+        var presenceSignals = new List<IReadOnlySignal<bool>>();
+        var liveValuesPerSignal = new List<List<bool>>();
+        dictionary.KeyAdded.Subscribe(x =>
+        {
+            addedKeys.Add(x.key);
+            presenceSignals.Add(x.isInDictionary);
+
+            var liveValues = new List<bool>();
+            x.isInDictionary.Values.Subscribe(liveValues.Add);
+            liveValuesPerSignal.Add(liveValues);
+        });
+
+        dictionary["a"] = 1;
+        dictionary.Remove("a");
+        dictionary["a"] = 2;
+
+        presenceSignals[0].Value.Should().BeFalse();
+        presenceSignals[1].Value.Should().BeTrue();
+
+        dictionary.Remove("a");
+
+        addedKeys.Should().Equal("a", "a");
+        presenceSignals.Should().HaveCount(2);
+
+        liveValuesPerSignal[0].Should().Equal(true, false);
+        liveValuesPerSignal[1].Should().Equal(true, false);
+
+        presenceSignals[0].Value.Should().BeFalse();
+        presenceSignals[1].Value.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task KeyAddedIncludingCurrent_ShouldEmitExistingKeysOnSubscribe()
+    {
+        await this.SwitchToMainThread();
+        var dictionary = new DictionarySignal<string, int>();
+        dictionary["a"] = 1;
+        dictionary["b"] = 2;
+
+        var addedKeys = new List<string>();
+        dictionary.KeyAddedIncludingCurrent().Subscribe(x => addedKeys.Add(x.key));
+
+        addedKeys.Should().BeEquivalentTo(["a", "b"]);
+    }
+
+    [Fact]
+    public async Task KeyAddedIncludingCurrent_ShouldAlsoEmitFutureKeys()
+    {
+        await this.SwitchToMainThread();
+        var dictionary = new DictionarySignal<string, int>();
+        dictionary["a"] = 1;
+
+        var addedKeys = new List<string>();
+        dictionary.KeyAddedIncludingCurrent().Subscribe(x => addedKeys.Add(x.key));
+        addedKeys.Should().Equal("a");
+
+        dictionary["b"] = 2;
+        addedKeys.Should().Equal("a", "b");
+    }
+
+    [Fact]
+    public async Task KeyAddedIncludingCurrent_PresenceSignalForExistingKey_ShouldTrackRemoval()
+    {
+        await this.SwitchToMainThread();
+        var dictionary = new DictionarySignal<string, int>();
+        dictionary["a"] = 1;
+
+        IReadOnlySignal<bool>? isInDictionary = null;
+        dictionary.KeyAddedIncludingCurrent().Subscribe(x => isInDictionary = x.isInDictionary);
+
+        isInDictionary!.Value.Should().BeTrue();
+
+        dictionary.Remove("a");
+        isInDictionary.Value.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task KeyAddedIncludingCurrent_ShouldNotDropKeyAddedReentrantlyDuringSnapshot()
+    {
+        await this.SwitchToMainThread();
+        var dictionary = new DictionarySignal<string, int>();
+        dictionary["a"] = 1;
+
+        var addedKeys = new List<string>();
+        dictionary.KeyAddedIncludingCurrent().Subscribe(x =>
+        {
+            addedKeys.Add(x.key);
+            if (x.key == "a")
+            {
+                dictionary["b"] = 2;
+            }
+        });
+
+        addedKeys.Should().Equal("a", "b");
     }
 }
