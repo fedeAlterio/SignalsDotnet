@@ -1,27 +1,30 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SignalsDotnet.Playground;
+using SignalsDotnet.Query;
 
 namespace SignalsDotnet.Playground.Client;
 
-sealed class DashboardStreamWorker(DashboardStreamReader reader, ILogger<DashboardStreamWorker> logger) : BackgroundService
+sealed class DashboardStreamWorker(IDashboardApi api, ILogger<DashboardStreamWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var query = """
-            {
-                title
-                status
-                onlineCount
-                sensorCount
-                average
-                summary
-            }
-            """;
-
-        int received = 0;
-        await foreach (var value in reader.ReadAsync(query, stoppingToken))
+        var query = SignalComputedQuery.Create((Dashboard x) => new
         {
-            logger.LogInformation("[{Received}] {Value}", ++received, value);
+            Title = x.Title,
+            Status = x.Status,
+            Average = x.Average,
+            Summary = x.Summary,
+            Ranked = x
+                .GetSensorsRankedAsync(2)
+                .Await()
+                .Select(s => new RankedSensor { Label = s.Label, Adjusted = s.Adjusted })
+                .ToList()
+        });
+
+        await foreach (var value in api.GetDashboardValuesAsync(query, stoppingToken))
+        {
+            logger.LogInformation("[{Received}]", value);
         }
     }
 }

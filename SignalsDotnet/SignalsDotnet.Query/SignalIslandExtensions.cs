@@ -1,5 +1,4 @@
 using System.Runtime.CompilerServices;
-using System.Text.Json;
 using System.Threading.Channels;
 using R3;
 
@@ -9,7 +8,7 @@ public static class SignalIslandExtensions
 {
     public static async IAsyncEnumerable<object?> ReadComputedValuesAsync<T>(this SignalIsland<T> island,
                                                                            SignalComputedQuery query,
-                                                                           JsonSerializerOptions? options = null,
+                                                                           NamingConventionOptions? naming = null,
                                                                            [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         if (island is null)
@@ -27,7 +26,7 @@ public static class SignalIslandExtensions
 
         var source = await island.SwitchToIslandContextAsync(cancellationToken);
 
-        using var subscription = query.ComputedObservable(source, options)
+        using var subscription = query.ComputedObservable(source, naming)
                                       .Subscribe(value => channel.Writer.TryWrite(value),
                                                  error => channel.Writer.TryComplete(error),
                                                  result => channel.Writer.TryComplete(result.Exception));

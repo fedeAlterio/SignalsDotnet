@@ -86,12 +86,13 @@ public class ToQuerySelectorTests
         public Task NothingAsync() => Task.CompletedTask;
     }
 
-    static readonly JsonSerializerOptions PascalCase = new();
+    static readonly JsonSerializerOptions PascalCaseJson = new();
+    static readonly NamingConventionOptions PascalCase = NamingConventionOptions.FromJson(PascalCaseJson);
 
-    static Func<Employee, object?> Compile(SignalComputedQuery query, JsonSerializerOptions? options = null) =>
+    static Func<Employee, object?> Compile(SignalComputedQuery query, NamingConventionOptions? options = null) =>
         query.ToQuerySelector<Employee>(options);
 
-    static Func<Employee, ValueTask<object?>> CompileAsync(SignalComputedQuery query, JsonSerializerOptions? options = null) =>
+    static Func<Employee, ValueTask<object?>> CompileAsync(SignalComputedQuery query, NamingConventionOptions? options = null) =>
         query.ToAsyncQuerySelector<Employee>(options);
 
     static string Json(object? value) => JsonSerializer.Serialize(value, SignalsQueryExtensions.DefaultJsonOptions);
@@ -193,7 +194,7 @@ public class ToQuerySelectorTests
     {
         var f = Compile("{ Name }", PascalCase);
 
-        JsonSerializer.Serialize(f(new Employee()), PascalCase).ShouldBe("""{"Name":"Ada"}""");
+        JsonSerializer.Serialize(f(new Employee()), PascalCaseJson).ShouldBe("""{"Name":"Ada"}""");
     }
 
     [Fact]
@@ -506,7 +507,7 @@ public class ToQuerySelectorTests
     {
         var f = Compile("{ SiteAt(index: 0) { City } }", PascalCase);
 
-        JsonSerializer.Serialize(f(new Employee()), PascalCase).ShouldBe("""{"SiteAt":{"City":"London"}}""");
+        JsonSerializer.Serialize(f(new Employee()), PascalCaseJson).ShouldBe("""{"SiteAt":{"City":"London"}}""");
     }
 
     [Fact]
