@@ -3,17 +3,14 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using System.Text.Json.Serialization.Metadata;
 
 namespace SignalsDotnet.Query.Internals;
 
 static class ProjectionBuilder
 {
-    internal static Expression BuildProjection(Expression source, IReadOnlyList<SelectionField> fields, JsonSerializerOptions options)
+    internal static Expression BuildProjection(Expression source, IReadOnlyList<SelectionField> fields, INamingConvention naming)
     {
-        var node = Build(source, fields, options);
+        var node = Build(source, fields, naming);
 
         if (node.IsAsync)
             throw new FormatException("The query awaits an asynchronous member and cannot be projected synchronously.");
@@ -21,12 +18,12 @@ static class ProjectionBuilder
         return node.Expression;
     }
 
-    internal static bool IsAsyncProjection(Type type, IReadOnlyList<SelectionField> fields, JsonSerializerOptions options) =>
-        Build(Expression.Parameter(type, "source"), fields, options).IsAsync;
+    internal static bool IsAsyncProjection(Type type, IReadOnlyList<SelectionField> fields, INamingConvention naming) =>
+        Build(Expression.Parameter(type, "source"), fields, naming).IsAsync;
 
-    internal static Expression BuildAsyncProjection(Expression source, IReadOnlyList<SelectionField> fields, JsonSerializerOptions options)
+    internal static Expression BuildAsyncProjection(Expression source, IReadOnlyList<SelectionField> fields, INamingConvention naming)
     {
-        var node = Build(source, fields, options);
+        var node = Build(source, fields, naming);
 
         return node.IsAsync
             ? Cast(node.Expression, typeof(ValueTask<object?>))
@@ -44,15 +41,15 @@ static class ProjectionBuilder
         public static Node Async(Expression expression) => new(expression, true);
     }
 
-    static Node Build(Expression source, IReadOnlyList<SelectionField> fields, JsonSerializerOptions options) =>
-        Build(Node.Sync(source), fields, options);
+    static Node Build(Expression source, IReadOnlyList<SelectionField> fields, INamingConvention naming) =>
+        Build(Node.Sync(source), fields, naming);
 
-    static Node Build(Node source, IReadOnlyList<SelectionField> fields, JsonSerializerOptions options)
+    static Node Build(Node source, IReadOnlyList<SelectionField> fields, INamingConvention naming)
     {
         if (source.IsAsync)
         {
             var awaited = Expression.Parameter(source.ValueType, "awaited");
-            var inner = Build(Node.Sync(awaited), fields, options);
+            var inner = Build(Node.Sync(awaited), fields, naming);
 
             return Node.Async(Continue(source.Expression, inner, awaited));
         }
@@ -63,12 +60,11 @@ static class ProjectionBuilder
             return Node.Sync(value);
 
         if (TryGetDictionaryValueType(value.Type, out var keyType, out var valueType))
-            return BuildDictionaryProjection(value, keyType, valueType, fields, options);
+            return BuildDictionaryProjection(value, keyType, valueType, fields, naming);
 
         if (TryGetEnumerableElementType(value.Type, out var elementType))
-            return BuildSequenceProjection(value, elementType, fields, options);
+            return BuildSequenceProjection(value, elementType, fields, naming);
 
-        var properties = GetJsonProperties(value.Type, options);
         var children = new List<(string Key, Node Value)>(fields.Count);
 
         foreach (var field in fields)
@@ -76,15 +72,15 @@ static class ProjectionBuilder
             Node member;
 
             if (field.IsCall)
-                member = BuildCall(value, field, options);
-            else if (properties.TryGetValue(field.Name, out var property))
+                member = BuildCall(value, field, naming);
+            else if (TryFindProperty(value.Type, field.Name, naming, out var property))
                 member = Node.Sync(Expression.Property(value, property));
-            else if (TryFindMethod(value.Type, field, options, out var method))
-                member = BuildCall(value, field, method, options);
+            else if (TryFindMethod(value.Type, field, naming, out var method))
+                member = BuildCall(value, field, method, naming);
             else
-                throw new FormatException(NotFound(value.Type, field, options));
+                throw new FormatException(NotFound(value.Type, field, naming));
 
-            children.Add((field.Key, Build(member, field.Children, options)));
+            children.Add((field.Key, Build(member, field.Children, naming)));
         }
 
         var nullable = !value.Type.IsValueType || Nullable.GetUnderlyingType(value.Type) is not null;
@@ -149,30 +145,30 @@ static class ProjectionBuilder
             Expression.Call(ProjectionAsync.FromResultMethod.MakeGenericMethod(typeof(object)), Expression.Constant(null, typeof(object))),
             whenNotNull);
 
-    static Node BuildCall(Expression source, SelectionField field, JsonSerializerOptions options)
+    static Node BuildCall(Expression source, SelectionField field, INamingConvention naming)
     {
-        if (!TryFindMethod(source.Type, field, options, out var method))
-            throw new FormatException(NotFound(source.Type, field, options));
+        if (!TryFindMethod(source.Type, field, naming, out var method))
+            throw new FormatException(NotFound(source.Type, field, naming));
 
-        return BuildCall(source, field, method, options);
+        return BuildCall(source, field, method, naming);
     }
 
-    static string NotFound(Type type, SelectionField field, JsonSerializerOptions options)
+    static string NotFound(Type type, SelectionField field, INamingConvention naming)
     {
         var hidden = type.GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                         .Any(x => IsQueryable(x) && NameMatches(field.Name, x.Name, options));
+                         .Any(x => IsQueryable(x) && NameMatches(field.Name, x.Name, naming));
 
         return hidden
             ? $"'{type.Name}.{field.Name}' is not queryable. Annotate it with [{nameof(SignalQueryableAttribute)}] to expose it."
             : $"'{type.Name}' has no queryable property or method named '{field.Name}'.";
     }
 
-    static Node BuildCall(Expression source, SelectionField field, MethodInfo method, JsonSerializerOptions options)
+    static Node BuildCall(Expression source, SelectionField field, MethodInfo method, INamingConvention naming)
     {
         var parameters = method.GetParameters();
         var arguments = new Expression[parameters.Length];
 
-        var unknown = field.ArgumentsOrEmpty.FirstOrDefault(x => !parameters.Any(p => NameMatches(x.Name, p.Name, options)));
+        var unknown = field.ArgumentsOrEmpty.FirstOrDefault(x => !parameters.Any(p => NameMatches(x.Name, p.Name, naming)));
 
         if (unknown is not null)
             throw new FormatException($"'{field.Name}' has no argument named '{unknown.Name}'.");
@@ -180,7 +176,7 @@ static class ProjectionBuilder
         for (var i = 0; i < parameters.Length; i++)
         {
             var parameter = parameters[i];
-            var supplied = field.ArgumentsOrEmpty.FirstOrDefault(x => NameMatches(x.Name, parameter.Name, options));
+            var supplied = field.ArgumentsOrEmpty.FirstOrDefault(x => NameMatches(x.Name, parameter.Name, naming));
 
             if (supplied is null)
             {
@@ -262,13 +258,13 @@ static class ProjectionBuilder
         }
     }
 
-    static bool TryFindMethod(Type type, SelectionField field, JsonSerializerOptions options, [NotNullWhen(true)] out MethodInfo? method)
+    static bool TryFindMethod(Type type, SelectionField field, INamingConvention naming, [NotNullWhen(true)] out MethodInfo? method)
     {
-        var candidates = GetQueryableMethods(type).Where(x => NameMatches(field.Name, x.Name, options)).ToList();
+        var candidates = GetQueryableMethods(type).Where(x => NameMatches(field.Name, x.Name, naming)).ToList();
 
         if (candidates.Count > 1)
         {
-            var matching = candidates.Where(x => Binds(x, field, options)).ToList();
+            var matching = candidates.Where(x => Binds(x, field, naming)).ToList();
 
             if (matching.Count > 1)
                 throw new FormatException($"'{field.Name}' is ambiguous between {matching.Count} overloads.");
@@ -280,18 +276,18 @@ static class ProjectionBuilder
         return method is not null;
     }
 
-    static bool Binds(MethodInfo method, SelectionField field, JsonSerializerOptions options)
+    static bool Binds(MethodInfo method, SelectionField field, INamingConvention naming)
     {
         var parameters = method.GetParameters();
 
-        return parameters.All(p => p.HasDefaultValue || field.ArgumentsOrEmpty.Any(a => NameMatches(a.Name, p.Name, options)))
-            && field.ArgumentsOrEmpty.All(a => parameters.Any(p => NameMatches(a.Name, p.Name, options)));
+        return parameters.All(p => p.HasDefaultValue || field.ArgumentsOrEmpty.Any(a => NameMatches(a.Name, p.Name, naming)))
+            && field.ArgumentsOrEmpty.All(a => parameters.Any(p => NameMatches(a.Name, p.Name, naming)));
     }
 
-    static bool NameMatches(string queried, string? declared, JsonSerializerOptions options) =>
+    static bool NameMatches(string queried, string? declared, INamingConvention naming) =>
         declared is not null
      && (string.Equals(queried, declared, StringComparison.Ordinal)
-      || string.Equals(queried, options.PropertyNamingPolicy?.ConvertName(declared), StringComparison.Ordinal));
+      || string.Equals(queried, naming.GetName(declared), StringComparison.Ordinal));
 
     internal static IEnumerable<MethodInfo> GetQueryableMethods(Type type)
     {
@@ -321,11 +317,11 @@ static class ProjectionBuilder
         return source;
     }
 
-    static Node BuildDictionaryProjection(Expression source, Type keyType, Type valueType, IReadOnlyList<SelectionField> fields, JsonSerializerOptions options)
+    static Node BuildDictionaryProjection(Expression source, Type keyType, Type valueType, IReadOnlyList<SelectionField> fields, INamingConvention naming)
     {
         var pairType = typeof(KeyValuePair<,>).MakeGenericType(keyType, valueType);
         var element = Expression.Parameter(valueType, "value");
-        var projected = Build(element, fields, options);
+        var projected = Build(element, fields, naming);
 
         if (projected.IsAsync)
         {
@@ -383,10 +379,10 @@ static class ProjectionBuilder
         return true;
     }
 
-    static Node BuildSequenceProjection(Expression source, Type elementType, IReadOnlyList<SelectionField> fields, JsonSerializerOptions options)
+    static Node BuildSequenceProjection(Expression source, Type elementType, IReadOnlyList<SelectionField> fields, INamingConvention naming)
     {
         var element = Expression.Parameter(elementType, "element");
-        var projected = Build(element, fields, options);
+        var projected = Build(element, fields, naming);
 
         if (projected.IsAsync)
         {
@@ -444,33 +440,19 @@ static class ProjectionBuilder
         return true;
     }
 
-    static readonly Dictionary<JsonSerializerOptions, JsonSerializerOptions> Resolvable = [];
-
-    static JsonSerializerOptions EnsureResolver(JsonSerializerOptions options)
+    static bool TryFindProperty(Type type, string queried, INamingConvention naming, [NotNullWhen(true)] out PropertyInfo? property)
     {
-        if (options.TypeInfoResolver is not null)
-            return options;
+        foreach (var candidate in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            if (candidate.CanRead
+             && naming.TryGetPropertyName(type, candidate, out var name)
+             && string.Equals(queried, name, StringComparison.Ordinal))
+            {
+                property = candidate;
+                return true;
+            }
 
-        lock (Resolvable)
-        {
-            if (Resolvable.TryGetValue(options, out var resolvable))
-                return resolvable;
-
-            resolvable = new JsonSerializerOptions(options) { TypeInfoResolver = new DefaultJsonTypeInfoResolver() };
-            Resolvable[options] = resolvable;
-            return resolvable;
-        }
+        property = null;
+        return false;
     }
 
-    static Dictionary<string, PropertyInfo> GetJsonProperties(Type type, JsonSerializerOptions options)
-    {
-        var info = EnsureResolver(options).GetTypeInfo(type);
-        var properties = new Dictionary<string, PropertyInfo>(StringComparer.Ordinal);
-
-        foreach (var property in info.Properties)
-            if (property is { Get: not null, AttributeProvider: PropertyInfo clr })
-                properties[property.Name] = clr;
-
-        return properties;
-    }
 }

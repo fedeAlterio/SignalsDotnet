@@ -1,11 +1,18 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Linq.Expressions;
 using SignalsDotnet.Query.Internals;
 
 namespace SignalsDotnet.Query;
 
-public sealed class SignalComputedQuery : IEquatable<SignalComputedQuery>
+public class SignalComputedQuery : IEquatable<SignalComputedQuery>
 {
     readonly IReadOnlyList<SelectionField> _fields;
+
+    private protected SignalComputedQuery(IReadOnlyList<SelectionField> fields, string text)
+    {
+        _fields = fields;
+        Text = text;
+    }
 
     public SignalComputedQuery(string query)
     {
@@ -16,11 +23,44 @@ public sealed class SignalComputedQuery : IEquatable<SignalComputedQuery>
         _fields = SelectionQuery.Parse(query);
     }
 
+    SignalComputedQuery(IReadOnlyList<SelectionField> fields)
+    {
+        _fields = fields;
+        Text = QueryBuilder.Write(fields);
+    }
+
     public string Text { get; }
 
     internal IReadOnlyList<SelectionField> Fields => _fields;
 
     public static SignalComputedQuery Parse(string query) => new(query);
+
+    public static SignalComputedQuery<TSource, object?> Create<TSource>(Expression<Func<TSource, object?>> selector, NamingConventionOptions? naming = null) =>
+        Build<TSource, object?>(selector, naming);
+
+    public static SignalComputedQuery<TSource, TResult> Create<TSource, TResult>(Expression<Func<TSource, TResult>> selector, NamingConventionOptions? naming = null) =>
+        Build<TSource, TResult>(selector, naming);
+
+    static SignalComputedQuery<TSource, TResult> Build<TSource, TResult>(Expression<Func<TSource, TResult>> selector, NamingConventionOptions? naming)
+    {
+        if (selector is null)
+            throw new ArgumentNullException(nameof(selector));
+
+        var fields = QueryBuilder.Build(selector, (naming ?? NamingConventionOptions.Default).Convention);
+
+        return new SignalComputedQuery<TSource, TResult>(fields, QueryBuilder.Write(fields), selector);
+    }
+
+    public static SignalComputedQuery Create(LambdaExpression selector, NamingConventionOptions? naming = null) =>
+        FromLambda(selector, naming);
+
+    static SignalComputedQuery FromLambda(LambdaExpression selector, NamingConventionOptions? naming)
+    {
+        if (selector is null)
+            throw new ArgumentNullException(nameof(selector));
+
+        return new SignalComputedQuery(QueryBuilder.Build(selector, (naming ?? NamingConventionOptions.Default).Convention));
+    }
 
     public static bool TryParse(string? query, [NotNullWhen(true)] out SignalComputedQuery? result)
     {

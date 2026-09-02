@@ -123,6 +123,8 @@ Ask for the fields you want with a GraphQL-like syntax, and get a stream that pu
   - [4. Explore it in the browser](#4-explore-it-in-the-browser)
   - [5. Consume it from a client](#5-consume-it-from-a-client)
   - [Query Syntax](#query-syntax)
+  - [Queries from Expressions](#queries-from-expressions)
+  - [Async Fields](#async-fields)
   - [Calling Methods](#calling-methods)
   - [A note on threading](#a-note-on-threading)
 
@@ -1019,12 +1021,12 @@ var dashboard = await island.SwitchToIslandContextAsync(cancellationToken);
 Inject the island and hand the query to `TypedResults.SignalComputed`:
 
 ```csharp
-app.MapGet("/api/dashboard/stream", (SignalIsland<Dashboard> island, SignalsQueryString query, CancellationToken cancellationToken) =>
+app.MapGet("/api/dashboard/stream", (SignalIsland<Dashboard> island, SignalComputedQueryString query, CancellationToken cancellationToken) =>
            TypedResults.SignalComputed(island, query, cancellationToken))
    .WithSignalIslandDiscovery();
 ```
 
-`SignalsQueryString` binds the query from the `query` string parameter, and the endpoint pushes a new projection as server-sent events whenever a selected signal changes. It rejects a missing query, a malformed one, and one naming a field or method that does not exist on `Dashboard`, each with a `400` and a message saying what was wrong — so client mistakes surface as errors rather than as a stream that silently never emits. It takes an optional `JsonSerializerOptions`.
+`SignalComputedQueryString` binds the query from the `query` string parameter, and the endpoint pushes a new projection as server-sent events whenever a selected signal changes. It rejects a missing query, a malformed one, and one naming a field or method that does not exist on `Dashboard`, each with a `400` and a message saying what was wrong — so client mistakes surface as errors rather than as a stream that silently never emits. It takes an optional `JsonSerializerOptions`.
 
 `WithSignalIslandDiscovery` is what makes the endpoint visible to the query explorer below; it infers the island type from the handler's `SignalIsland<T>` parameter, so it works on any handler you write. Leave it off and the endpoint still streams, it just does not show up in the dropdown.
 
@@ -1037,7 +1039,7 @@ For full control over parsing and error shape, go one level down to `ReadCompute
 ```csharp
 app.MapGet("/api/dashboard/stream", (SignalIsland<Dashboard> island, string? query, CancellationToken token) =>
 {
-    if (!SignalsQuery.TryParse(query, out var selection))
+    if (!SignalComputedQuery.TryParse(query, out var selection))
         return Results.BadRequest(new { error = $"'{query}' is not a valid query." });
 
     return TypedResults.ServerSentEvents(island.ReadComputedValuesAsync(selection, cancellationToken: token));
@@ -1114,13 +1116,13 @@ A field can be given an alias with `alias: field`, which renames it in the outpu
 ```
 
 ```csharp
-var query = SignalsQuery.Parse("{ title sensors { name } }");
+var query = SignalComputedQuery.Parse("{ title sensors { name } }");
 
-if (!SignalsQuery.TryParse(userInput, out var safe))
+if (!SignalComputedQuery.TryParse(userInput, out var safe))
     return Results.BadRequest();
 ```
 
-`TryParse` returns `false` on malformed input instead of throwing, so use it for anything client-supplied. A `string` also converts implicitly to `SignalsQuery`.
+`TryParse` returns `false` on malformed input instead of throwing, so use it for anything client-supplied. A `string` also converts implicitly to `SignalComputedQuery`.
 
 Parsing only validates the shape of the query. Names are resolved against `T` when the query is compiled, and an unknown or non-selectable field throws `FormatException` there, so an endpoint taking queries from clients should catch it as well as calling `TryParse`.
 
@@ -1129,6 +1131,91 @@ A query compiles to an ordinary selector, useful on its own:
 ```csharp
 Func<Dashboard, object?> selector = query.ToQuerySelector<Dashboard>();
 ```
+
+### Queries from Expressions
+
+A query does not have to be written as a string. `SignalComputedQuery.Create` translates a LINQ selector into one, so the client states the shape it wants in C# and the compiler checks it:
+
+```csharp
+var query = SignalComputedQuery.Create((Dashboard x) => new
+{
+    x.Title,
+    x.Average,
+    Cities = x.Sensors.Select(s => s.Name)
+});
+
+Console.WriteLine(query.Text); // { title average cities: sensors { name } }
+```
+
+The result is a `SignalComputedQuery<TSource, TResult>`, a `SignalComputedQuery` that also keeps the original `Selector`. Since it carries `TResult`, it types the other end of the wire too: a client can hand it to something like a Refit interface and get back the shape it asked for, rather than `object?`.
+
+```csharp
+public interface IDashboardApi
+{
+    [Get("/dashboard")]
+    IAsyncEnumerable<T> GetDashboardValuesAsync<T>([Query(Format = "")] SignalComputedQuery<Dashboard, T> query,
+                                                  CancellationToken cancellationToken = default);
+}
+```
+
+`ToString()` yields the query text, so it serializes into a query-string parameter as-is.
+
+What translates, and what it becomes:
+
+| Expression | Query |
+| --- | --- |
+| `x => x.Title` | `{ title }` |
+| `x => new { x.Title, x.Average }` | `{ title average }` |
+| `x => new { Headline = x.Title }` | `{ headline: title }` |
+| `x => x.Sensors.Select(s => s.Name)` | `{ sensors { name } }` |
+| `x => x.Sensors.Select(s => new { s.Name, s.Reading })` | `{ sensors { name reading } }` |
+| `x => x.GetSensorByIndex(1).Name` | `{ getSensorByIndex(index: 1) { name } }` |
+
+A member renamed by the anonymous type becomes an alias; one that already matches the field name stays bare. `Select` projects each element of a collection, and it works the same way over a dictionary's values. A trailing `ToList()` or `ToArray()` is transparent. Captured variables are evaluated into literals, so `x.GetSensorByIndex(index)` writes the value `index` held. Optional arguments are written explicitly.
+
+Field names come from the same `JsonSerializerOptions` used everywhere else, including `[JsonPropertyName]`; pass a `NamingConventionOptions` to override the default:
+
+```csharp
+var pascal = NamingConventionOptions.FromJson(new JsonSerializerOptions());
+
+SignalComputedQuery.Create((Dashboard x) => new { x.Title }, pascal); // { Title }
+```
+
+Only what maps onto a selection set translates. Computation (`x => x.Average + 1`), constants, string interpolation, `[JsonIgnore]` properties, a method without `[SignalQueryable]`, and operators like `Where` throw `NotSupportedException`. The translation round-trips: parsing a generated query's `Text` gives back an equal query.
+
+### Async Fields
+
+A `[SignalQueryable]` method may return `Task<T>` or `ValueTask<T>`. It is queried like any other call:
+
+```csharp
+[GenerateSignals]
+public partial class Dashboard
+{
+    [SignalQueryable]
+    public async ValueTask<IReadOnlyList<Sensor>> GetSensorsRankedAsync(int take = 3) { /* ... */ }
+}
+```
+
+```
+{ title getSensorsRankedAsync(take: 2) { name reading } }
+```
+
+In an expression, mark the point where the result is unwrapped with `.Await()`. It is a marker recognised only inside a query — calling it anywhere else throws `InvalidOperationException`, and `.Result` on a task does not translate:
+
+```csharp
+var query = SignalComputedQuery.Create((Dashboard x) => new
+{
+    x.Title,
+    Ranked = x.GetSensorsRankedAsync(2)
+              .Await()
+              .Select(s => new { s.Name, s.Reading })
+              .ToList()
+});
+```
+
+A query containing an awaited field must be projected asynchronously. `IsAsync<T>()` reports which kind it is, and `ToAsyncQuerySelector<T>()` compiles it to a `Func<T, ValueTask<object?>>`; calling the synchronous `ToQuerySelector<T>()` on it throws `FormatException`.
+
+`ComputedObservable` and the streaming endpoint pick the right one on their own, so an async field needs nothing extra at the call site. Tracking is unchanged: signals read before the first await become dependencies like any others.
 
 ### Calling Methods
 
@@ -1183,7 +1270,7 @@ Because a method name alone is the output key, two calls to the same method need
 
 Argument binding is checked when the query is compiled, so an unknown method, a missing required argument, an unknown argument name, or a value of the wrong type throws `FormatException` there rather than mid-stream. An exception thrown by the method body itself surfaces on the stream, so keep queryable methods total — return `null` or an empty sequence rather than throwing.
 
-Methods returning `void`, `Task`, or `ValueTask`, generic method definitions, and methods with `ref`/`out` parameters are never queryable.
+Methods returning `void`, non-generic `Task` or `ValueTask`, generic method definitions, and methods with `ref`/`out` parameters are never queryable. A method returning `Task<T>` or `ValueTask<T>` is queryable — see [Async Fields](#async-fields).
 
 ### A note on threading
 
