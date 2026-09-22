@@ -41,6 +41,7 @@ internal sealed class ComputedObservable<T> : Observable<T>
         readonly Action<INotifySignalChanged> _onSignalRequested;
         readonly Action<Unit> _onSignalChanged;
         readonly Action<Unit> _setCompleted;
+        readonly Action _flushSignalChanged;
 
         public Subscription(ComputedObservable<T> observable, Observer<T> observer)
         {
@@ -48,6 +49,7 @@ internal sealed class ComputedObservable<T> : Observable<T>
             _observer = observer;
             _onSignalRequested = OnSignalRequested;
             _onSignalChanged = OnSignalChanged;
+            _flushSignalChanged = FlushSignalChanged;
             _setCompleted = _signalChangedAwaitable.SetCompleted;
             WatchSignalsChanges();
         }
@@ -66,6 +68,17 @@ internal sealed class ComputedObservable<T> : Observable<T>
         {
             if (Interlocked.CompareExchange(ref _anySignalArrived, 1, 0) == 1) return;
 
+            if (BatchScope.IsActive)
+            {
+                BatchScope.Defer(_flushSignalChanged);
+                return;
+            }
+
+            FlushSignalChanged();
+        }
+
+        void FlushSignalChanged()
+        {
             _cts?.Cancel();
             var scheduler = _observable._scheduler;
             if (scheduler is not null)

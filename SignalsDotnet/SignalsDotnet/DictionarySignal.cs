@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using R3;
+using SignalsDotnet.Internals;
 
 namespace SignalsDotnet;
 
@@ -53,9 +54,13 @@ public class DictionarySignal<TKey, TValue> : IDictionary<TKey, TValue> where TK
             {
                 var somethingOnKeyChanged = GetKeySignalOrDefault(key);
                 signal = new Signal<TValue>(value);
-                _keysChanged.Invoke();
-                _valuesChanged.Invoke();
-                somethingOnKeyChanged?.Invoke();
+                using (Signal.BatchScope())
+                {
+                    _keysChanged.Invoke();
+                    _valuesChanged.Invoke();
+                    somethingOnKeyChanged?.Invoke();
+                }
+
                 _keyAdded.OnNext(key);
             }
 #else
@@ -68,9 +73,13 @@ public class DictionarySignal<TKey, TValue> : IDictionary<TKey, TValue> where TK
             {
                 var somethingOnKeyChanged = GetKeySignalOrDefault(key);
                 _valuesByKey[key] = new Signal<TValue>(value);
-                _keysChanged.Invoke();
-                _valuesChanged.Invoke();
-                somethingOnKeyChanged?.Invoke();
+                using (Signal.BatchScope())
+                {
+                    _keysChanged.Invoke();
+                    _valuesChanged.Invoke();
+                    somethingOnKeyChanged?.Invoke();
+                }
+
                 _keyAdded.OnNext(key);
             }
 #endif
@@ -85,11 +94,14 @@ public class DictionarySignal<TKey, TValue> : IDictionary<TKey, TValue> where TK
         var removed = _valuesByKey.Remove(key);
         if (removed)
         {
-            _keysChanged.Invoke();
-            _valuesChanged.Invoke();
-            if (KeySignals.Remove(key, out var somethingOnKeyChanged))
+            using (Signal.BatchScope())
             {
-                somethingOnKeyChanged.Invoke();
+                _keysChanged.Invoke();
+                _valuesChanged.Invoke();
+                if (KeySignals.Remove(key, out var somethingOnKeyChanged))
+                {
+                    somethingOnKeyChanged.Invoke();
+                }
             }
         }
 
@@ -131,11 +143,14 @@ public class DictionarySignal<TKey, TValue> : IDictionary<TKey, TValue> where TK
         var addedOrRemovedSignals = KeySignals.Values.ToList();
         KeySignals.Clear();
         _valuesByKey.Clear();
-        _keysChanged.Invoke();
-        _valuesChanged.Invoke();
-        foreach (var signal in addedOrRemovedSignals)
+        using (Signal.BatchScope())
         {
-            signal.Invoke();
+            _keysChanged.Invoke();
+            _valuesChanged.Invoke();
+            foreach (var signal in addedOrRemovedSignals)
+            {
+                signal.Invoke();
+            }
         }
     }
 
@@ -144,9 +159,13 @@ public class DictionarySignal<TKey, TValue> : IDictionary<TKey, TValue> where TK
         var signal = new Signal<TValue>(value);
         var keySignal = GetKeySignalOrDefault(key);
         _valuesByKey.Add(key, signal);
-        keySignal?.Invoke();
-        _keysChanged.Invoke();
-        _valuesChanged.Invoke();
+        using (Signal.BatchScope())
+        {
+            keySignal?.Invoke();
+            _keysChanged.Invoke();
+            _valuesChanged.Invoke();
+        }
+
         _keyAdded.OnNext(key);
     }
 

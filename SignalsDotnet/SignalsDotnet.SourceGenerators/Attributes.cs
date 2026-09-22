@@ -24,6 +24,12 @@ static class Attributes
             [global::System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
             internal sealed class GenerateSignalsAttribute : global::System.Attribute
             {
+                /// <summary>
+                /// Emits the ModelChanged computed signal, which fires whenever any
+                /// generated property changes. It costs one computed signal per
+                /// instance, so models allocated in bulk can turn it off.
+                /// </summary>
+                public bool EmitModelChanged { get; set; } = true;
             }
 
             /// <summary>

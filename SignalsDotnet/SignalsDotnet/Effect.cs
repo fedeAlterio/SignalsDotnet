@@ -1,5 +1,6 @@
 ﻿using R3;
 using SignalsDotnet.Helpers;
+using SignalsDotnet.Internals;
 
 namespace SignalsDotnet;
 
@@ -70,7 +71,10 @@ public class Effect : IDisposable
 
         try
         {
-            action();
+            using (Signal.BatchScope())
+            {
+                action();
+            }
         }
         finally
         {

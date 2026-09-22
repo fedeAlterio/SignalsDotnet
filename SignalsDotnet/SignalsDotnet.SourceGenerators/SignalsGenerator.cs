@@ -231,6 +231,7 @@ public class SignalsGenerator : IIncrementalGenerator
 
         var emitModelChanged = properties.Count > 0
                                && type.TypeKind != TypeKind.Struct
+                               && IsModelChangedRequested(type)
                                && !type.GetMembers(Emitter.ModelChangedPropertyName).Any();
 
         var systemTextJsonAvailable =
@@ -386,6 +387,23 @@ public class SignalsGenerator : IIncrementalGenerator
                                          method.DeclaredAccessibility == Accessibility.Private
                                              ? "public"
                                              : AccessibilityToString(method.DeclaredAccessibility));
+    }
+
+    static bool IsModelChangedRequested(INamedTypeSymbol type)
+    {
+        var attribute = type.GetAttributes()
+                            .FirstOrDefault(x => x.AttributeClass?.ToDisplayString() == Attributes.GenerateSignalsAttributeName);
+
+        if (attribute is null)
+            return true;
+
+        foreach (var argument in attribute.NamedArguments)
+        {
+            if (argument.Key == "EmitModelChanged" && argument.Value.Value is bool requested)
+                return requested;
+        }
+
+        return true;
     }
 
     static bool IsNotifyPropertyChangedRequested(INamedTypeSymbol type)
