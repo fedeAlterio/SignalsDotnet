@@ -31,6 +31,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SignalsDotnet.Playground.Cl
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SignalsDotnet.Playground.AppHost", "Playground\SignalsDotnet.Playground.AppHost\SignalsDotnet.Playground.AppHost.csproj", "{656A9B41-40B6-4464-9681-D4C971E84429}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SignalsDotnet.Playground.Time", "Playground\SignalsDotnet.Playground.Time\SignalsDotnet.Playground.Time.csproj", "{68FB66AE-A91D-40A9-890A-6E3C7928DDEC}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -195,6 +197,18 @@ Global
 		{656A9B41-40B6-4464-9681-D4C971E84429}.Release|x64.Build.0 = Release|Any CPU
 		{656A9B41-40B6-4464-9681-D4C971E84429}.Release|x86.ActiveCfg = Release|Any CPU
 		{656A9B41-40B6-4464-9681-D4C971E84429}.Release|x86.Build.0 = Release|Any CPU
+		{68FB66AE-A91D-40A9-890A-6E3C7928DDEC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{68FB66AE-A91D-40A9-890A-6E3C7928DDEC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{68FB66AE-A91D-40A9-890A-6E3C7928DDEC}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{68FB66AE-A91D-40A9-890A-6E3C7928DDEC}.Debug|x64.Build.0 = Debug|Any CPU
+		{68FB66AE-A91D-40A9-890A-6E3C7928DDEC}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{68FB66AE-A91D-40A9-890A-6E3C7928DDEC}.Debug|x86.Build.0 = Debug|Any CPU
+		{68FB66AE-A91D-40A9-890A-6E3C7928DDEC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{68FB66AE-A91D-40A9-890A-6E3C7928DDEC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{68FB66AE-A91D-40A9-890A-6E3C7928DDEC}.Release|x64.ActiveCfg = Release|Any CPU
+		{68FB66AE-A91D-40A9-890A-6E3C7928DDEC}.Release|x64.Build.0 = Release|Any CPU
+		{68FB66AE-A91D-40A9-890A-6E3C7928DDEC}.Release|x86.ActiveCfg = Release|Any CPU
+		{68FB66AE-A91D-40A9-890A-6E3C7928DDEC}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -203,6 +217,7 @@ Global
 		{53BBBD57-0E4C-4FBC-80B0-50DDF5BAE0D8} = {12E5C810-18C6-BE57-4EA6-3F3BE821652E}
 		{57FA6DD7-57AF-467D-BF12-753425FB72E4} = {12E5C810-18C6-BE57-4EA6-3F3BE821652E}
 		{656A9B41-40B6-4464-9681-D4C971E84429} = {12E5C810-18C6-BE57-4EA6-3F3BE821652E}
+		{68FB66AE-A91D-40A9-890A-6E3C7928DDEC} = {12E5C810-18C6-BE57-4EA6-3F3BE821652E}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {1395FD1B-A0BE-49AD-B46F-8AEC100E338B}

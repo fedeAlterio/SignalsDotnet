@@ -5,7 +5,7 @@ using SignalsDotnet.Internals.ComputedSignalsFactory;
 
 namespace SignalsDotnet;
 
-public static class ComputedSignalFactoryEx
+public static partial class ComputedSignalFactoryEx
 {
     public static IComputedSignalFactory DisconnectEverythingWhen(this IComputedSignalFactory @this, Observable<bool> shouldBeCancelled)
     {
