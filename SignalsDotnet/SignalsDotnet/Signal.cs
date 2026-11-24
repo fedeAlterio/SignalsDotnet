@@ -7,22 +7,28 @@ namespace SignalsDotnet;
 
 public static partial class Signal
 {
-    internal sealed class Scope
+    internal sealed class Scope : IDisposable
     {
-        Subject<INotifySignalChanged>? _subject;
+        public static readonly Scope Untracked = new(null, null);
 
-        public Scope(Scope? parent) => Parent = parent;
-        public Scope? Parent { get; }
+        readonly Scope? _previous;
+        Observer<INotifySignalChanged>? _observer;
 
-        public Subject<INotifySignalChanged>? Subject => _subject;
-
-        public Subject<INotifySignalChanged> GetOrCreateSubject()
+        public Scope(Observer<INotifySignalChanged>? observer, Scope? previous)
         {
-            var existing = _subject;
-            if (existing is not null) return existing;
+            _observer = observer;
+            _previous = previous;
+        }
 
-            var created = new Subject<INotifySignalChanged>();
-            return Interlocked.CompareExchange(ref _subject, created, null) ?? created;
+        public bool IsTracking => Volatile.Read(ref _observer) is not null;
+
+        public void Notify(INotifySignalChanged signal) => Volatile.Read(ref _observer)?.OnNext(signal);
+
+        public void Dispose()
+        {
+            Volatile.Write(ref _observer, null);
+            if (ReferenceEquals(_currentScope.Value, this))
+                _currentScope.Value = _previous;
         }
     }
 
@@ -36,10 +42,10 @@ public static partial class Signal
         var current = _currentScope.Value;
 
         // Only shadow when we're actively tracking; if there's no scope, or the current
-        // scope is already untracked (null Subject), there's nothing to suppress.
-        if (current?.Subject is null) return new(null);
+        // scope is already not tracking, there's nothing to suppress.
+        if (current is not { IsTracking: true }) return new(null);
 
-        _currentScope.Value = new Scope(current);
+        _currentScope.Value = Scope.Untracked;
         return new UntrackedReleaserDisposable(current);
     }
 
@@ -47,7 +53,7 @@ public static partial class Signal
     /// Whether a computation is currently collecting dependencies. Lets external reactive
     /// sources skip creating tracking state for reads that nothing is observing.
     /// </summary>
-    public static bool InsideComputed => _currentScope.Value is not null;
+    public static bool InsideComputed => _currentScope.Value is { IsTracking: true };
 
     public static async Task<T> Untracked<T>(Func<Task<T>> action)
     {
@@ -104,41 +110,16 @@ public static partial class Signal
     public static void NotifySignalRequested(INotifySignalChanged signal)
     {
         // Lock-free: _currentScope is per-flow, so this is a plain read.
-        _currentScope.Value?.Subject?.OnNext(signal);
+        _currentScope.Value?.Notify(signal);
     }
 
     internal sealed class SignalsRequestedObservable : Observable<INotifySignalChanged>
     {
         protected override IDisposable SubscribeCore(Observer<INotifySignalChanged> observer)
         {
-            var current = _currentScope.Value;
-            bool shouldClear;
-            Scope scope;
-
-            if (current is null)
-            {
-                scope = new Scope(null);
-                _currentScope.Value = scope;
-                shouldClear = true;
-            }
-            else
-            {
-                scope = current;
-                shouldClear = false;
-            }
-
-            var subject = scope.GetOrCreateSubject();
-            subject.Subscribe(observer.OnNext, observer.OnErrorResume, observer.OnCompleted);
-            return new SignalsRequestedDisposable(shouldClear);
-        }
-    }
-
-    readonly struct SignalsRequestedDisposable(bool shouldClear) : IDisposable
-    {
-        public void Dispose()
-        {
-            if (shouldClear)
-                _currentScope.Value = null;
+            var scope = new Scope(observer, _currentScope.Value);
+            _currentScope.Value = scope;
+            return scope;
         }
     }
 
