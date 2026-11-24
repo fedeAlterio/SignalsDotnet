@@ -6,8 +6,8 @@ namespace SignalsDotnet;
 
 public class Effect : IDisposable
 {
-    static readonly object _atomicOperationsLocker = new ();
     static readonly AsyncLocal<BehaviorSubject<int>> _atomicOperationsCounter = new();
+    static readonly Observable<Unit> _runNow = Observable.Never<Unit>().Prepend(Unit.Default);
     readonly IDisposable _subscription;
 
     public Effect(Action onChange, TimeProvider? scheduler = null)
@@ -44,31 +44,24 @@ public class Effect : IDisposable
 
     static Func<Unit, Observable<Unit>> ComputationDelayer(TimeProvider? scheduler)
     {
-        var atomicOperations = Observable.Defer(() =>
-        {
-            lock (_atomicOperationsLocker)
-            {
-                return _atomicOperationsCounter.Value ??= new(0);
-            }
-        });
-
-        var noAtomicOperations = atomicOperations.Synchronize()
-                                                 .Where(counter => counter == 0)
-                                                 .Select(static _ => Unit.Default);
+        var noAtomicOperations = Observable.Defer(static () => _atomicOperationsCounter.Value is { Value: not 0 } counter
+                                                      ? WhenNoAtomicOperationIsRunning(counter)
+                                                      : _runNow);
 
         return scheduler is null
             ? _ => noAtomicOperations
             : _ => noAtomicOperations.ObserveOn(scheduler);
     }
 
+    static Observable<Unit> WhenNoAtomicOperationIsRunning(BehaviorSubject<int> counter)
+    {
+        return counter.Where(static running => running == 0)
+                      .Select(static _ => Unit.Default);
+    }
+
     public static void AtomicOperation(Action action)
     {
-        lock (_atomicOperationsLocker)
-        {
-            _atomicOperationsCounter.Value ??= new(0);
-            _atomicOperationsCounter.Value.OnNext(_atomicOperationsCounter.Value.Value + 1);
-        }
-
+        var counter = BeginAtomicOperation();
         try
         {
             using (Signal.BatchScope())
@@ -78,31 +71,39 @@ public class Effect : IDisposable
         }
         finally
         {
-            lock (_atomicOperationsLocker)
-            {
-                _atomicOperationsCounter.Value.OnNext(_atomicOperationsCounter.Value.Value - 1);
-            }
+            EndAtomicOperation(counter);
         }
     }
 
     public static async ValueTask AtomicOperationAsync(Func<ValueTask> action)
     {
-        lock (_atomicOperationsLocker)
-        {
-            _atomicOperationsCounter.Value ??= new(0);
-            _atomicOperationsCounter.Value.OnNext(_atomicOperationsCounter.Value.Value + 1);
-        }
-
+        var counter = BeginAtomicOperation();
         try
         {
             await action();
         }
         finally
         {
-            lock (_atomicOperationsLocker)
-            {
-                _atomicOperationsCounter.Value.OnNext(_atomicOperationsCounter.Value.Value - 1);
-            }
+            EndAtomicOperation(counter);
+        }
+    }
+
+    static BehaviorSubject<int> BeginAtomicOperation()
+    {
+        var counter = _atomicOperationsCounter.Value ??= new(0);
+        lock (counter)
+        {
+            counter.OnNext(counter.Value + 1);
+        }
+
+        return counter;
+    }
+
+    static void EndAtomicOperation(BehaviorSubject<int> counter)
+    {
+        lock (counter)
+        {
+            counter.OnNext(counter.Value - 1);
         }
     }
 
