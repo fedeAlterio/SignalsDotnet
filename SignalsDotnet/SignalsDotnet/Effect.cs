@@ -52,7 +52,7 @@ public class Effect : IDisposable
             }
         });
 
-        var noAtomicOperations = atomicOperations.Synchronize(_atomicOperationsCounter)
+        var noAtomicOperations = atomicOperations.Synchronize()
                                                  .Where(counter => counter == 0)
                                                  .Select(static _ => Unit.Default);
 
