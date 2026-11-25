@@ -10,14 +10,18 @@ public class Effect : IDisposable
     static readonly Observable<Unit> _runNow = Observable.Never<Unit>().Prepend(Unit.Default);
     readonly IDisposable _subscription;
 
-    public Effect(Action onChange, TimeProvider? scheduler = null)
+    public Effect(Action onChange, TimeProvider? scheduler = null) : this(onChange, EffectKind.SideEffect, scheduler)
+    {
+    }
+
+    public Effect(Action onChange, EffectKind kind, TimeProvider? scheduler = null)
     {
         var computationDelayer = ComputationDelayer(scheduler ?? DefaultScheduler);
         _subscription = Signal.ComputedObservable(_ =>
                               {
                                   onChange();
                                   return new(Unit.Default);
-                              }, static () => Optional<Unit>.Empty, computationDelayer)
+                              }, static () => Optional<Unit>.Empty, computationDelayer, flushOrder: kind.FlushOrder())
                               .Subscribe();
     }
 
@@ -28,7 +32,7 @@ public class Effect : IDisposable
                               {
                                   await onChange(token);
                                   return Unit.Default;
-                              }, static () => Optional<Unit>.Empty, computationDelayer, concurrentChangeStrategy)
+                              }, static () => Optional<Unit>.Empty, computationDelayer, concurrentChangeStrategy, FlushOrder.AfterComputations)
                               .Subscribe();
     }
 

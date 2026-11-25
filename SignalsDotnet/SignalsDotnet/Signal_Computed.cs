@@ -118,8 +118,9 @@ public partial class Signal
     internal static Observable<T> ComputedObservable<T>(Func<CancellationToken, ValueTask<T>> func,
                                                         Func<Optional<T>> fallbackValue,
                                                         Func<Unit, Observable<Unit>>? scheduler = null,
-                                                        ConcurrentChangeStrategy concurrentChangeStrategy = default)
+                                                        ConcurrentChangeStrategy concurrentChangeStrategy = default,
+                                                        FlushOrder flushOrder = FlushOrder.WithComputations)
     {
-        return new ComputedObservable<T>(func, fallbackValue, scheduler, concurrentChangeStrategy);
+        return new ComputedObservable<T>(func, fallbackValue, scheduler, concurrentChangeStrategy, flushOrder);
     }
 }

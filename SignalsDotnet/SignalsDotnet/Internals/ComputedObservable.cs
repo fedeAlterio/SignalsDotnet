@@ -10,16 +10,19 @@ internal sealed class ComputedObservable<T> : Observable<T>
     readonly Func<Optional<T>> _fallbackValue;
     readonly Func<Unit, Observable<Unit>>? _scheduler;
     readonly ConcurrentChangeStrategy _concurrentChangeStrategy;
+    readonly FlushOrder _flushOrder;
 
     public ComputedObservable(Func<CancellationToken, ValueTask<T>> func,
                               Func<Optional<T>> fallbackValue,
                               Func<Unit, Observable<Unit>>? scheduler = null,
-                              ConcurrentChangeStrategy concurrentChangeStrategy = default)
+                              ConcurrentChangeStrategy concurrentChangeStrategy = default,
+                              FlushOrder flushOrder = FlushOrder.WithComputations)
     {
         _func = func;
         _fallbackValue = fallbackValue;
         _scheduler = scheduler;
         _concurrentChangeStrategy = concurrentChangeStrategy;
+        _flushOrder = flushOrder;
     }
 
     protected override IDisposable SubscribeCore(Observer<T> observer) => new Subscription(this, observer);
@@ -70,7 +73,7 @@ internal sealed class ComputedObservable<T> : Observable<T>
 
             if (BatchScope.IsActive)
             {
-                BatchScope.Defer(_flushSignalChanged);
+                BatchScope.Defer(_flushSignalChanged, _observable._flushOrder);
                 return;
             }
 

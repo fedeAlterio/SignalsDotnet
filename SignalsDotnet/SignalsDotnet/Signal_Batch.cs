@@ -4,9 +4,11 @@ namespace SignalsDotnet;
 
 public partial class Signal
 {
-    public static BatchReleaserDisposable BatchScope()
+    public static BatchReleaserDisposable BatchScope() => BatchScope(BatchFlushMode.InOrderOfSubscription);
+
+    public static BatchReleaserDisposable BatchScope(BatchFlushMode mode)
     {
-        Internals.BatchScope.Enter();
+        Internals.BatchScope.Enter(mode);
         return new BatchReleaserDisposable(true);
     }
 
