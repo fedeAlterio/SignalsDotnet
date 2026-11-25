@@ -19,24 +19,15 @@ internal static class BatchScope
         if (--_depth > 0)
             return;
 
-        if (_pending is null || _pending.Count == 0)
+        var pending = _pending;
+        if (pending is null || pending.Count == 0)
             return;
 
-        _depth = 1;
-        try
+        _pending = null;
+
+        foreach (var flush in pending)
         {
-            while (_pending is { Count: > 0 } pending)
-            {
-                _pending = null;
-                foreach (var flush in pending)
-                {
-                    flush();
-                }
-            }
-        }
-        finally
-        {
-            _depth = 0;
+            flush();
         }
     }
 }
