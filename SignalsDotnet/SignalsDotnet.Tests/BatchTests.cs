@@ -297,6 +297,99 @@ public class BatchTests
         computed.Value.Should().Be(2);
     }
 
+    [Fact(Timeout = 20_000)]
+    public async Task EffectsTriggeredByOneBatchRecomputeASharedComputedOnlyOnce()
+    {
+        await this.SwitchToMainThread();
+        var clock = new Signal<int>();
+        var partials = Enumerable.Range(0, 5).Select(_ => new Signal<int>()).ToArray();
+        var effects = partials.Select((partial, index) => new Effect(() =>
+        {
+            var tick = clock.Value;
+            Signal.Batch(() => partial.Value = tick * (index + 1));
+        })).ToArray();
+
+        var computations = 0;
+        var total = Signal.Computed(() =>
+        {
+            computations++;
+            return partials.Sum(partial => partial.Value);
+        });
+        var totalsSeen = new List<int>();
+        total.Values.Subscribe(totalsSeen.Add);
+
+        computations = 0;
+        totalsSeen.Clear();
+        Signal.Batch(() => clock.Value = 1);
+
+        computations.Should().Be(1);
+        totalsSeen.Should().Equal(15);
+        foreach (var effect in effects)
+        {
+            effect.Dispose();
+        }
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task AnEffectReadingAComputedFedByAnotherEffectOfTheSameBatchEndsWithTheUpdatedValue()
+    {
+        await this.SwitchToMainThread();
+        var clock = new Signal<int>();
+        var source = new Signal<int>();
+        var doubled = Signal.Computed(() => source.Value * 2);
+        var observed = new Signal<int>();
+        using var writer = new Effect(() =>
+        {
+            var tick = clock.Value;
+            Signal.Batch(() => source.Value = tick);
+        });
+        using var reader = new Effect(() =>
+        {
+            var value = clock.Value + doubled.Value;
+            Signal.Batch(() => observed.Value = value);
+        });
+
+        Signal.Batch(() => clock.Value = 3);
+
+        doubled.Value.Should().Be(6);
+        observed.Value.Should().Be(9);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task AChainOfComputedsRecomputesEachLevelOnceWhenTriggeredByABatchedEffect()
+    {
+        await this.SwitchToMainThread();
+        var clock = new Signal<int>();
+        var source = new Signal<int>();
+        using var writer = new Effect(() =>
+        {
+            var tick = clock.Value;
+            Signal.Batch(() => source.Value = tick);
+        });
+
+        var firstLevelComputations = 0;
+        var secondLevelComputations = 0;
+        var firstLevel = Signal.Computed(() =>
+        {
+            firstLevelComputations++;
+            return source.Value + 1;
+        });
+        var secondLevel = Signal.Computed(() =>
+        {
+            secondLevelComputations++;
+            return firstLevel.Value * 10;
+        });
+        secondLevel.Values.Subscribe(_ => { });
+
+        firstLevelComputations = 0;
+        secondLevelComputations = 0;
+        Signal.Batch(() => clock.Value = 4);
+
+        firstLevelComputations.Should().Be(1);
+        secondLevelComputations.Should().Be(1);
+        secondLevel.Value.Should().Be(50);
+    }
+
     [Fact]
     public async Task BatchShouldStillTrackNewlyAddedDependencies()
     {
